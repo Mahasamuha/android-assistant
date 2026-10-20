@@ -64,7 +64,7 @@ No infrastructure specifics go into tracked files or commit messages. This cover
 
 ## Android 17 gotchas (details in plan §3)
 
-- **Audio while not visible fails silently.** TTS is fine while the session panel is up. To keep speaking after the panel closes, start a foreground service while visible and stop it when TTS finishes.
+- **Audio while not visible fails silently** for audio played in our own process. Platform `TextToSpeech` is not affected: the engine plays in its own process, and on-device testing showed speech continuing after the panel closed with no foreground service (`docs/phase1-notes.md`). Recheck if we ever play audio ourselves (e.g. cloud TTS through `AudioTrack`).
 - **Background activity launches are restricted.** Fire `ACTION_CALL` and other activity launches while the session is visible.
 - **Contacts:** some account columns moved off `ContactsContract.Data`. Read them from `RawContacts`.
 

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v1 only runs while unlocked, so no keyguard launch. -->
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="com.mahasamuha.assistant.voice.AssistantSessionService"
+    android:recognitionService="com.mahasamuha.assistant.voice.StubRecognitionService"
+    android:settingsActivity="com.mahasamuha.assistant.MainActivity"
+    android:supportsAssist="true"
+    android:supportsLaunchVoiceAssistFromKeyguard="false" />
