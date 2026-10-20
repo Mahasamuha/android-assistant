@@ -53,7 +53,6 @@ class MainActivity : ComponentActivity() {
                     roleHeld = roleHeld,
                     message = message,
                     onOpenAssistantSettings = { open(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) },
-                    onOpenDefaultApps = { open(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)) },
                     onRequestRole = ::requestAssistantRole,
                 )
             }
@@ -91,7 +90,6 @@ private fun SetupScreen(
     roleHeld: Boolean,
     message: String?,
     onOpenAssistantSettings: () -> Unit,
-    onOpenDefaultApps: () -> Unit,
     onRequestRole: () -> Unit,
 ) {
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -114,7 +112,6 @@ private fun SetupScreen(
                     "3. Long-press the power button to open the panel.",
             )
             Button(onClick = onOpenAssistantSettings) { Text("Open digital assistant settings") }
-            OutlinedButton(onClick = onOpenDefaultApps) { Text("Open default apps") }
             OutlinedButton(onClick = onRequestRole) { Text("Test: request assistant role") }
             message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
