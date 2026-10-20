@@ -37,7 +37,7 @@ Applications → Applications → Create:
 | Value | Where it comes from | Used in |
 |---|---|---|
 | Issuer | The provider's "OpenID Configuration Issuer", e.g. `https://<issuer-host>/application/o/<slug>/` (with the trailing slash) | `ISSUER_URL` in `deploy/local/gateway.env`; app config |
-| Audience | The provider's client ID. Authentik sets the access token's `aud` to it **(verify: as a single string; the gateway rejects array audiences)**. Authentik can't mint per-resource audiences (RFC 8707), so isolation comes from the dedicated provider instead: its own issuer (per-provider issuer mode) and its own client ID. Tokens from other Authentik applications fail the issuer check. | `AUDIENCE` in `deploy/local/gateway.env` |
+| Audience | The provider's client ID. Authentik sets the token's `aud` to it as a single string (checked in the provider's token preview, 2026-10-20; the gateway rejects array audiences). Authentik can't mint per-resource audiences (RFC 8707), so isolation comes from the dedicated provider instead: its own issuer (per-provider issuer mode) and its own client ID. Tokens from other Authentik applications fail the issuer check. | `AUDIENCE` in `deploy/local/gateway.env` |
 | Client ID | Step 1 | App config only |
 
-Check a real token before going live: sign in once, decode the access token (e.g. at a local JWT decoder, never a website), and confirm `iss`, `aud`, `exp` (≈10 min) and `sub` match what the gateway expects.
+Check a real token before going live: sign in once, decode the access token (e.g. at a local JWT decoder, never a website), and confirm `iss`, `aud`, `exp` (≈10 min) and `sub` match what the gateway expects. The provider's Preview tab shows a sample payload; it showed `exp` 30 minutes after `iat`, so confirm the access token validity setting is `minutes=10`.
