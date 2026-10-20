@@ -1,0 +1,4 @@
+<resources>
+    <!-- Compose draws all UI; this only sets the window before Compose takes over. -->
+    <style name="Theme.MahasamuhaAssistant" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

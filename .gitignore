@@ -1,0 +1,29 @@
+# Secrets and real deployment values (see CLAUDE.md: infrastructure specifics stay out of the repo)
+.env
+.env.*
+!.env.example
+local.properties
+*.local.*
+deploy/local/
+
+# Signing keys
+*.jks
+*.keystore
+
+# Android / Gradle
+.gradle/
+.kotlin/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Node
+node_modules/
+dist/
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
