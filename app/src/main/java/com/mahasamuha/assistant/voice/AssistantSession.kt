@@ -43,8 +43,8 @@ class AssistantSession(context: Context) :
     private var ttsReady = false
     private var speakWhenReady = false
 
-    // Main-thread only. If the panel closes mid-utterance, TTS shutdown waits for the
-    // utterance to end, so whether audio stops is the platform's doing, not ours.
+    // Main-thread only. If the session is destroyed mid-utterance, TTS shutdown waits for
+    // the utterance to end (phase 1 showed the engine keeps playing after the panel closes).
     private var speaking = false
     private var destroyed = false
 
@@ -88,6 +88,12 @@ class AssistantSession(context: Context) :
 
     override fun onHide() {
         Log.i(TAG, "Session.onHide")
+        // Dismissing the panel means "stop talking". Phase 3: when the session hides because
+        // it launched something itself (e.g. a call), skip this so the announcement finishes.
+        if (speaking) {
+            tts?.stop()
+            speaking = false
+        }
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
         super.onHide()
     }
