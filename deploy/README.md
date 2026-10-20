@@ -44,6 +44,8 @@ How the proxy reaches the gateway depends on where it runs:
 - **Proxy in Docker on the same host (recommended):** set `PROXY_NETWORK` in `deploy/.env` to the proxy's Docker network and start with `docker compose -f compose.yaml -f compose.proxy-network.yaml up -d`. The gateway publishes no host port; the proxy forwards to `gateway:8080`.
 - **Proxy elsewhere, or not in Docker:** set `GATEWAY_BIND` to an address the proxy can reach (loopback only works if the proxy runs directly on the host), and keep that port closed to the internet.
 
+**During development** the stack can run on a workstation while the proxy runs on another host: set `GATEWAY_BIND` to the workstation's LAN address and a port, and point a separate proxy host at it. Note that ports published by Docker bypass ufw (Docker's iptables rules come first), so the gateway is reachable from the whole LAN, not only the proxy. That's acceptable because every request needs a valid token, but don't count on ufw to narrow it.
+
 Proxy host in Nginx Proxy Manager:
 
 | Setting | Value |
