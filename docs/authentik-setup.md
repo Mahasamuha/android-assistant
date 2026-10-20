@@ -20,6 +20,8 @@ Applications → Providers → Create → **OAuth2/OpenID Provider**:
 | Refresh token validity | `days=60` |
 | Scopes | `openid`, plus `offline_access` so a refresh token is issued **(verify: newer Authentik versions only issue refresh tokens with `offline_access`)** |
 | Issuer mode | Per provider (based on the application slug) |
+| Subject mode | Based on the user's hashed ID (the default). The gateway only needs `sub` to be stable, for rate limiting and logs; hashed keeps usernames and emails out of the logs. |
+| Grant types | Authorization code (with PKCE) and refresh token only, if the version lets you restrict them. Not the implicit grant, client credentials, device code, or password. (The "implicit consent" *authorization flow* is fine: it only skips the consent screen.) |
 
 Refresh token rotation: the plan wants refresh tokens rotated on use (sliding 60 days). **(verify)** whether Authentik rotates refresh tokens on each use and whether that's configurable.
 
