@@ -1,6 +1,6 @@
 # Phone Assistant — Plan (draft)
 
-Status: v1 decisions complete; nothing is built yet.
+Status: phase 1 done (see `docs/phase1-notes.md`); phase 2 server half in progress (see `docs/phase2-notes.md`).
 
 ## 1. Goal
 
@@ -27,7 +27,7 @@ Non-goals for now: self-hosted model, Play Store distribution, multi-user, iOS.
 | Token validation: small custom auth gateway in front of Bifrost | Bifrost's OIDC/JWT support is Enterprise-only (unpublished pricing); LiteLLM's is too (reportedly ~$250/mo+). A separate gateway keeps the LLM gateway off the internet and is independent of which LLM gateway sits behind it. |
 | Gateway pair is an isolated, replaceable unit | The app only sees an OpenAI-compatible base URL plus an OAuth issuer. Swapping Bifrost for LiteLLM (or anything else) touches only the gateway's upstream config. |
 | v1 requires the phone to be unlocked before calling the LLM | One chunk at a time. Lock-screen use may be added later. |
-| LLM provider: Anthropic | Existing account. Start with a small, fast model; latency matters more than capability for v1. Confirm Bifrost's Anthropic tool-calling translation in phase 2. |
+| LLM provider: Anthropic | Existing account. Start with a small, fast model; latency matters more than capability for v1. Confirm Bifrost's Anthropic tool-calling translation in phase 2, including the server-side web search tool (§6). Model: Haiku 5.5 (`claude-haiku-5-5`); verified 2026-10-20 that it runs the basic web search tool (`web_search_20250305`) directly. |
 | Unreachable server: fail cleanly in v1 | Spoken error, no provider key on the phone. App config holds endpoints as a list so a fallback URL/host can be added in v.next without code changes. |
 | STT: on-device, behind a replaceable interface | Free, private, no extra round trip. An API implementation can be swapped in if accuracy (especially on contact names) disappoints. |
 | Confirmation policy for side effects | **Texts:** always read back recipient and body; send only after confirmation. **Calls:** always announce "Calling <name>, <number type>"; if the contact match is high-confidence, proceed without waiting; if ambiguous (multiple matches or numbers), ask first. **Confirming:** voice or tap, always both available. |
@@ -35,8 +35,9 @@ Non-goals for now: self-hosted model, Play Store distribution, multi-user, iOS.
 | Logging: configurable on the server | Cost/usage data always kept. Request/response bodies: configurable retention (start with short retention). Plus a server-side debug toggle that turns on full logging and automatically turns itself off after ~30 minutes, for reproducing issues. Controlled on the server, not the app. Likely implemented in the auth gateway (it sees every request) so it doesn't depend on Bifrost's logging features; Bifrost keeps cost data. |
 | Phone stack: Kotlin + Jetpack Compose | The assistant role, session, and call/SMS/contacts APIs are all native; no cross-platform layer since iOS is permanently out of scope. Compose for the panel UI. |
 | Token lifetimes | Access token ~10 minutes; refresh token ~60 days, rotated on use (sliding). Refresh token encrypted with a hardware-backed Android Keystore key. Configured in Authentik's provider settings. |
-| Auth gateway implementation | TypeScript on Node (strict mode, pnpm); Bun may be explored later since the code is the same. Streams responses through without buffering (SSE pass-through). Stateless apart from the debug-logging toggle and an in-memory rate limit (both reset on restart, which is acceptable). Exposes chat completions only; all other routes blocked. |
-| v1 capabilities (see §5a) | General Q&A with short spoken answers; contact lookup + phone call; SMS. |
+| Auth gateway implementation | TypeScript on Node (strict mode, pnpm); Bun may be explored later since the code is the same. Streams responses through without buffering (SSE pass-through), rewriting each event to strip Bifrost's `extra_fields` (it carries provider org/workspace IDs and headers). Stateless apart from the debug-logging toggle and an in-memory rate limit (both reset on restart, which is acceptable). Exposes chat completions only; all other routes blocked. |
+| Web search: Anthropic's server tool on the chat-completions route | Verified in the phase 2 spike: Bifrost passes `web_search_20250305` through `/v1/chat/completions` (streaming too), counts the $0.01 search fee in cost and budget, and enforces the virtual key and model allowlist. Keeps the gateway's single OpenAI-compatible route. Thinking off via `reasoning_effort: "none"` cuts time to first text from ~4.9 s to ~1.8 s. |
+| v1 capabilities (see §5a) | General Q&A with short spoken answers, including live web lookups; contact lookup + phone call; SMS. |
 
 ## 3. Platform constraints (from research, Oct 2026)
 
@@ -120,7 +121,7 @@ Exit criterion per phase: used daily for a week without wanting to go back to th
 
 | Capability | Example | Mechanism | Permission |
 |---|---|---|---|
-| General Q&A, spoken | "How many grams in a cup of sugar?" | LLM only. System prompt requires short, plain-text, speakable answers (no markdown, lists, or URLs; numbers and units written to be read aloud). | — |
+| General Q&A, spoken, with live web lookups | "How many grams in a cup of sugar?" / "What's the weather in Boston?" | LLM, plus Anthropic's server-side web search tool when the answer depends on current information (~$0.01 per search plus result tokens; adds a few seconds). System prompt requires short, plain-text, speakable answers (no markdown, lists, or URLs; numbers and units written to be read aloud); citations are not read aloud. | — |
 | Contact lookup | "Call Mom" → resolve "Mom" | `ContactsContract` query on the phone, exposed to the LLM as a `find_contact` tool. High confidence = exactly one contact match with one number of the requested type; anything else is ambiguous and the assistant asks back. | `READ_CONTACTS` |
 | Phone call | "Call Mom on her mobile" | `ACTION_CALL` intent with the resolved number, launched while the session is visible. | `CALL_PHONE` |
 | SMS | "Text Sam I'm running late" | `SmsManager` send, after spoken/visual confirmation of recipient and body. | `SEND_SMS` |
@@ -131,7 +132,7 @@ Privacy note: contact lookup happens on the phone; only the matched name and num
 
 ## 6. Open questions
 
-No open questions remain for v1. New ones get added here as they come up.
+No open questions remain for v1. (Web search through Bifrost was resolved by the phase 2 spike; see the decisions table and `docs/phase2-notes.md`.) New questions get added here as they come up.
 
 ## 7. Risks
 
