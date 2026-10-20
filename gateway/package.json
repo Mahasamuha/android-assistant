@@ -1,0 +1,23 @@
+{
+  "name": "assistant-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Auth gateway: validates identity-provider JWTs and forwards chat completions to the LLM gateway.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "jose": "6.2.12"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}

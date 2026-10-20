@@ -1,0 +1,9 @@
+# Temporary access to the Bifrost dashboard (budgets, cost logs). The dashboard has no login here,
+# so it is bound to loopback only; reach it over an SSH tunnel and take it down when done:
+#   docker compose -f compose.yaml -f compose.admin.yaml up -d
+#   ssh -L 8081:127.0.0.1:8081 <home-server>   # then open http://localhost:8081
+#   docker compose up -d                        # removes the published port again
+services:
+  bifrost:
+    ports:
+      - "127.0.0.1:8081:8080"

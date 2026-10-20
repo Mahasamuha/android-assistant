@@ -30,9 +30,9 @@ With thinking off, the model usually streams a short preamble ("I'll check the c
 
 ### Things the gateway and deploy must handle
 
-- **Strip `extra_fields`.** Bifrost adds `extra_fields` to every response, every SSE chunk, and error bodies. It includes routing info and `provider_response_headers`, which carry the Anthropic organization and workspace IDs and rate-limit headers. The gateway must remove it before responding, so SSE pass-through is line-by-line rewriting (still unbuffered), not a byte copy. Check whether a Bifrost setting turns it off.
-- **Bifrost logs content by default** (`content_summary` with the prompt and answer). Turn content logging off in Bifrost; body logging with retention belongs to the gateway (plan §2, Logging).
-- **A telemetry plugin is active by default.** Find out what it sends and disable it.
+- **`extra_fields`.** By default Bifrost adds `extra_fields` to every response, every SSE chunk, and error bodies, including `provider_response_headers` with the Anthropic organization and workspace IDs. Fixed in config: `client.extra_fields_placement: "headers"` removes it from bodies and chunks (nested fields are dropped entirely; scalars move to `x-bifrost-*` headers, which the gateway doesn't forward). Verified end to end: 0 of 35 stream chunks contained it.
+- **Bifrost logs content by default** (`content_summary` with the prompt and answer). Turned off with `client.disable_content_logging: true`; body logging with retention belongs to the gateway (plan §2, Logging).
+- **The "telemetry" plugin** is Bifrost's local Prometheus metrics, not phoning home. Left as is.
 - **Governance needs the config store.** With `config_store.enabled: false`, the governance plugin fails to start. Use the default SQLite config store (on a persistent volume, which also keeps budget usage across restarts).
 - **Virtual keys must name provider keys by ID.** Give each provider key an explicit `id` and list it in the virtual key's `provider_configs[].key_ids`. `key_ids` doesn't accept key names (fatal at startup), and omitting it leaves the virtual key with no usable key (`no_key_supports_model`).
 - **Virtual key header:** `x-bf-vk`. Keys prefixed `sk-bf-` are also accepted in `Authorization`, but the gateway should send `x-bf-vk`.
@@ -41,3 +41,22 @@ With thinking off, the model usually streams a short preamble ("I'll check the c
 ### Prompt notes for later
 
 - Without guidance the model hedges ("conditions may vary", "check a live source"). The system prompt should ask for a single, most recent reading and no caveats.
+
+## End-to-end test of gateway + Bifrost (2026-10-20)
+
+`deploy/compose.yaml` run locally with test values, plus a mock identity provider container on the backend network issuing Authentik-style tokens (issuer `.../application/o/<slug>/`, RS256, JWKS via discovery). About 4¢ spent.
+
+| Check | Result |
+|---|---|
+| Route allowlist | `GET /healthz` 200; `/`, `POST /v1/models`, `GET /v1/chat/completions`, `/api/logs`, `POST /anthropic/v1/messages` all 404 |
+| Token validation | Missing, garbage, expired, wrong `aud`, wrong `iss`, unpublished signing key, `alg: none`, missing `sub`: all 401. Valid token passes. Identity provider unreachable: 503. |
+| Rate limit (20/min, burst 5) | 6th rapid request 429 with `retry-after: 3` |
+| Body checks | 300 KB body 413; non-JSON 400; JSON array 400 |
+| Streamed web search | 200, `text/event-stream`; response headers are only `content-type`, `cache-control`, `x-accel-buffering` (plus Node's own); no `extra_fields` in any chunk |
+| Non-streamed | Standard OpenAI body, no `extra_fields` |
+| Client hangs up mid-stream | Logged as 499, upstream request cancelled |
+| Debug toggle | `SIGUSR2` on (auto-off time logged), `SIGUSR2` off |
+| Body log | Hourly JSONL, mode 600, request + assembled answer + usage; raw events when debug is on |
+| Budget ($0.03 test cap) | Refused with 402 `budget_exceeded` at $0.0346; the phone gets the message to speak |
+
+Test-harness note: the host firewall blocks containers from reaching services on the host, so the mock identity provider has to run as a container on the compose network.

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "client": {
+    "enforce_auth_on_inference": true,
+    "disable_content_logging": true,
+    "extra_fields_placement": "headers",
+    "log_retention_days": 365,
+    "max_request_body_size_mb": 1
+  },
+  "providers": {
+    "anthropic": {
+      "keys": [
+        {
+          "id": "anthropic-main",
+          "name": "anthropic-main",
+          "value": "env.ANTHROPIC_API_KEY",
+          "models": ["claude-haiku-5-5"],
+          "weight": 1.0
+        }
+      ]
+    }
+  },
+  "governance": {
+    "virtual_keys": [
+      {
+        "id": "vk-phone",
+        "name": "<virtual-key-name>",
+        "value": "env.BIFROST_VIRTUAL_KEY",
+        "is_active": true,
+        "provider_configs": [
+          {
+            "provider": "anthropic",
+            "weight": 1.0,
+            "allowed_models": ["claude-haiku-5-5"],
+            "key_ids": ["anthropic-main"]
+          }
+        ]
+      }
+    ],
+    "budgets": [
+      {
+        "id": "budget-phone",
+        "virtual_key_id": "vk-phone",
+        "max_limit": 10.0,
+        "reset_duration": "1M"
+      }
+    ]
+  }
+}

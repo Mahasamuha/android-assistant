@@ -1,0 +1,41 @@
+# Auth gateway + Bifrost. Real values live in deploy/local/ and deploy/.env (both gitignored);
+# see README.md for setup.
+name: assistant
+
+services:
+  gateway:
+    build: ../gateway
+    image: assistant-gateway
+    restart: unless-stopped
+    env_file: local/gateway.env
+    environment:
+      UPSTREAM_URL: http://bifrost:8080
+      PORT: "8080"
+    ports:
+      # Only the reverse proxy should reach the gateway. Keep it on loopback unless the proxy runs elsewhere.
+      - "${GATEWAY_BIND:-127.0.0.1:8787}:8080"
+    volumes:
+      - gateway-logs:/app/logs
+    depends_on:
+      - bifrost
+    networks:
+      - backend
+
+  bifrost:
+    image: maximhq/bifrost:v2.3.1
+    restart: unless-stopped
+    env_file: local/bifrost.env
+    volumes:
+      # Config store (virtual keys, budget usage) and cost logs; must persist across restarts.
+      - bifrost-data:/app/data
+      - ./local/bifrost-config.json:/app/data/config.json:ro
+    # No ports: Bifrost is reachable only from the gateway. Outbound access to the provider is still needed.
+    networks:
+      - backend
+
+networks:
+  backend: {}
+
+volumes:
+  gateway-logs: {}
+  bifrost-data: {}
