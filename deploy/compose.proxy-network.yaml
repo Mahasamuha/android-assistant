@@ -1,0 +1,15 @@
+# Use when the reverse proxy runs in Docker on the same host: the gateway joins the proxy's network
+# and publishes no host port at all. Set PROXY_NETWORK in deploy/.env, then:
+#   docker compose -f compose.yaml -f compose.proxy-network.yaml up -d
+# and point the proxy at http://gateway:8080.
+services:
+  gateway:
+    ports: !reset []
+    networks:
+      - backend
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:?set PROXY_NETWORK in deploy/.env}

@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, errors, jwtVerify, type JWTVerifyGetKey } from "jose";
+import { createRemoteJWKSet, errors, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose";
 import type { Config } from "./config.js";
 import { HttpError } from "./errors.js";
 
@@ -10,7 +10,7 @@ export interface Identity {
 const ALGORITHMS = ["RS256", "RS384", "RS512", "PS256", "ES256", "ES384", "EdDSA"];
 
 /**
- * Validates bearer tokens against the identity provider's JWKS: signature, iss, aud, exp/nbf.
+ * Validates bearer tokens against the identity provider's JWKS: signature, iss, exp/nbf, and aud as one exact string.
  * The JWKS URL is discovered lazily so the gateway can start while the identity provider is down.
  */
 export class TokenVerifier {
@@ -23,24 +23,28 @@ export class TokenVerifier {
     if (!token) throw new HttpError(401, "Missing bearer token", { "www-authenticate": "Bearer" });
 
     const jwks = await this.getJwks();
+    let payload: JWTPayload;
     try {
-      const { payload } = await jwtVerify(token, jwks, {
+      // `audience` is deliberately not passed: jose accepts an aud ARRAY that merely contains the
+      // expected value. aud is checked below as a single exact string instead.
+      ({ payload } = await jwtVerify(token, jwks, {
         issuer: this.config.issuerUrl,
-        audience: this.config.audience,
         algorithms: ALGORITHMS,
         clockTolerance: 30,
         requiredClaims: ["exp", "sub"],
-      });
-      return { subject: payload.sub as string };
+      }));
     } catch (e) {
       if (e instanceof errors.JWKSTimeout || e instanceof errors.JWKSInvalid) {
         throw new HttpError(503, "Identity provider unavailable");
       }
       if (e instanceof errors.JOSEError) {
-        throw new HttpError(401, "Invalid token", { "www-authenticate": 'Bearer error="invalid_token"' });
+        throw invalidToken();
       }
       throw e;
     }
+
+    if (typeof payload.aud !== "string" || payload.aud !== this.config.audience) throw invalidToken();
+    return { subject: payload.sub as string };
   }
 
   private getJwks(): Promise<JWTVerifyGetKey> {
@@ -65,4 +69,8 @@ export class TokenVerifier {
     if (typeof document.jwks_uri !== "string") throw new Error("discovery document has no jwks_uri");
     return document.jwks_uri;
   }
+}
+
+function invalidToken(): HttpError {
+  return new HttpError(401, "Invalid token", { "www-authenticate": 'Bearer error="invalid_token"' });
 }

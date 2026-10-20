@@ -38,13 +38,26 @@ The Bifrost config keeps these settings on purpose:
 
 The config store and budget usage live in the `bifrost-data` volume. `docker compose down -v` deletes them, which resets spend tracking.
 
-## Reverse proxy requirements
+## Reverse proxy (Nginx Proxy Manager)
 
-Whatever proxy fronts the gateway:
-- Terminate TLS and forward to `GATEWAY_BIND`. Forwarding every path is fine: the gateway itself returns 404 for anything but `POST /v1/chat/completions` and `GET /healthz`.
-- Don't buffer responses (the gateway sends `X-Accel-Buffering: no` for streams; nginx also needs `proxy_buffering off`).
-- Allow long reads: a streamed answer with a web search takes a few seconds, but give it at least 120 s.
-- Apply per-IP rate limiting here if wanted; the gateway limits per token subject.
+How the proxy reaches the gateway depends on where it runs:
+- **Proxy in Docker on the same host (recommended):** set `PROXY_NETWORK` in `deploy/.env` to the proxy's Docker network and start with `docker compose -f compose.yaml -f compose.proxy-network.yaml up -d`. The gateway publishes no host port; the proxy forwards to `gateway:8080`.
+- **Proxy elsewhere, or not in Docker:** set `GATEWAY_BIND` to an address the proxy can reach (loopback only works if the proxy runs directly on the host), and keep that port closed to the internet.
+
+Proxy host in Nginx Proxy Manager:
+
+| Setting | Value |
+|---|---|
+| Domain name | `<gateway-host>` |
+| Scheme / forward host / port | `http` / `gateway` (shared network) or the `GATEWAY_BIND` address / `8080` or the `GATEWAY_BIND` port |
+| Websockets support | Off (not used) |
+| Block common exploits | On |
+| SSL | Request a certificate; Force SSL on; HTTP/2 on |
+| Advanced | Nothing needed. The gateway sends `X-Accel-Buffering: no` on streams so nginx doesn't buffer them, and nginx's defaults (60 s read timeout, 1 MB body limit) fit. |
+
+Forwarding every path is fine: the gateway returns 404 for anything but `POST /v1/chat/completions` and `GET /healthz`. Per-IP rate limiting, if wanted, belongs at the proxy; the gateway limits per token subject.
+
+Check it from outside once it's up: `curl https://<gateway-host>/healthz` returns `{"status":"ok"}`, and `curl -X POST https://<gateway-host>/v1/chat/completions` returns 401.
 
 ## Operations
 

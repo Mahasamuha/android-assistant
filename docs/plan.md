@@ -87,7 +87,7 @@ Phone
 - **Identity provider:** Authentik.
 - **Phone client:** a statically registered public client in Authentik (no DCR needed for a single known app). Authorization code + PKCE (Proof Key for Code Exchange) via a browser custom tab, likely using the AppAuth-Android library.
 - **Tokens on the phone:** access token short-lived; refresh token stored encrypted with an Android Keystore key, so a gesture invocation can silently refresh without a login prompt. v1 only uses them while the phone is unlocked.
-- **Validation:** the auth gateway checks the JWT signature against Authentik's JWKS, plus issuer, audience (a dedicated audience for this gateway, same pattern as the MCP auth proxy), and expiry. On success it forwards to Bifrost with the virtual key attached. Bifrost is never reachable from outside.
+- **Validation:** the auth gateway checks the JWT signature against Authentik's JWKS, plus issuer, audience, and expiry. The audience is the assistant provider's client ID, checked as a single exact string (array audiences rejected, as in the asterism-proxy design); with Authentik's per-provider issuer, a dedicated provider gives the same isolation as a per-resource audience. On success it forwards to Bifrost with the virtual key attached. Bifrost is never reachable from outside.
 - **What the app is configured with:** issuer URL, client ID, gateway base URL. No secrets.
 - **What the gateway is configured with:** issuer/JWKS URL, expected audience, upstream (Bifrost) URL, virtual key (env var). Upstream URL is the only thing that changes if Bifrost is swapped.
 
