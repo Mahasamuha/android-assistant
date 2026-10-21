@@ -23,7 +23,7 @@ The phone holds the default assistant role (`VoiceInteractionService`). A gestur
 
 - No provider API keys or Bifrost keys on the phone. The app holds only issuer URL, client ID, and gateway base URL(s).
 - Bifrost is never internet-reachable. Only the auth gateway is exposed.
-- The gateway exposes only `POST /v1/chat/completions` (plus a health check). Everything else returns 404.
+- The gateway keeps its public surface minimal: an explicit allowlist of routes, each added deliberately and recorded in the plan, all requiring a valid token except the health check. Everything else returns 404. Today the allowlist is `POST /v1/chat/completions` and `GET /healthz`.
 - The gateway streams responses through without buffering (SSE pass-through) and forwards only `content-type` from upstream. Bifrost must keep `extra_fields_placement: "headers"`, or its response bodies leak provider account IDs (`docs/phase2-notes.md`).
 - Side effects follow the confirmation policy in plan §2: SMS always confirmed; calls announced, and confirmed only when the contact match is ambiguous.
 - STT, TTS, and the LLM endpoint each sit behind an interface so implementations can be swapped.
