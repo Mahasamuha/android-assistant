@@ -22,8 +22,3 @@ data class Forecast(
     data class Day(val date: LocalDate, val high: Double, val low: Double, val condition: String, val precipitationChance: Int?)
 }
 
-/** A live forecast source. Swap implementations without touching the tool or the prompt. */
-interface WeatherProvider {
-    /** Current conditions, the next 48 hours, and the next few days. */
-    suspend fun forecast(latitude: Double, longitude: Double, units: Units): Forecast
-}

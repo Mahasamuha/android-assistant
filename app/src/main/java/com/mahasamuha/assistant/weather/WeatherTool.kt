@@ -10,8 +10,11 @@ import kotlin.math.roundToInt
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** `get_weather`: live conditions and forecast from a [WeatherProvider], for the user's location or a named place. */
-class WeatherTool(private val provider: WeatherProvider, private val locations: LocationSource) : Tool {
+/**
+ * `get_weather`: live conditions and forecast for the user's location or a named place. To change
+ * provider, replace this tool (e.g. with a remote `get_weather`, plan §4b) rather than the forecast source.
+ */
+class WeatherTool(private val provider: OpenMeteoWeather, private val locations: LocationSource) : Tool {
 
     override val definition = ToolDefinition(
         name = "get_weather",

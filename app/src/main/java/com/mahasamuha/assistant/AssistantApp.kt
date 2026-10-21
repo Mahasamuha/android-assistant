@@ -19,7 +19,7 @@ class AssistantApp : Application() {
     val chatClient: ChatClient by lazy { GatewayChatClient(config.gatewayUrls, auth) }
     val locationSource: LocationSource by lazy { PlatformLocationSource(this) }
 
-    // Tools the model can call. The weather provider is the swap point (e.g. a keyed provider later).
+    // Tools the model can call. A remote tool with the same name will override a local one (plan §4b).
     val tools by lazy { ToolRegistry(listOf(WeatherTool(OpenMeteoWeather(), locationSource))) }
     val skills by lazy { BundledSkills(assets).load() }
 }

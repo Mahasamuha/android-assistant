@@ -12,9 +12,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Open-Meteo (open-meteo.com): free for non-commercial use, no API key. */
-class OpenMeteoWeather : WeatherProvider {
+class OpenMeteoWeather {
 
-    override suspend fun forecast(latitude: Double, longitude: Double, units: Units): Forecast = withContext(Dispatchers.IO) {
+    /** Current conditions, the next 48 hours, and the next few days. */
+    suspend fun forecast(latitude: Double, longitude: Double, units: Units): Forecast = withContext(Dispatchers.IO) {
         val json = JSONObject(get(url(latitude, longitude, units)))
         val currentJson = json.getJSONObject("current")
         val now = LocalDateTime.parse(currentJson.getString("time"))
