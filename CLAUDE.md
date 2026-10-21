@@ -70,7 +70,7 @@ No infrastructure specifics go into tracked files or commit messages. This cover
 
 ## Current phase
 
-Nothing is built. Phase 1 (prove invocation) and the server half of phase 2 (gateway + Bifrost) are independent. **Start with phase 1** unless told otherwise.
+Phase 1 is done (`docs/phase1-notes.md`). Phase 2 is working end to end in dev: gateway + Bifrost, app sign-in, and the voice round trip with web search and a weather tool (`docs/phase2-notes.md`). **Next is phase 3, following the tools-and-skills design in plan §4b**, starting with rollout step 1 (bundled skills). The phase 1 and phase 2 sections below are kept as the original briefs.
 
 ### Phase 1 — Prove invocation
 

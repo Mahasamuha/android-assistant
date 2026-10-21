@@ -39,6 +39,8 @@ Non-goals for now: self-hosted model, Play Store distribution, multi-user, iOS.
 | Web search: Anthropic's server tool on the chat-completions route | Verified in the phase 2 spike: Bifrost passes `web_search_20250305` through `/v1/chat/completions` (streaming too), counts the $0.01 search fee in cost and budget, and enforces the virtual key and model allowlist. Keeps the gateway's single OpenAI-compatible route. Thinking off via `reasoning_effort: "none"` cuts time to first text from ~4.9 s to ~1.8 s. |
 | Approximate location (coarse permission, city level) | The phone resolves a coarse fix to city/region/country while the user is speaking and passes it to web search (`user_location`) and the prompt. Without it, location-dependent questions need the city spoken. Coordinates leave the phone only rounded, for the weather tool. |
 | Weather via a tool, not web search | Verified 2026-10-20: web search returns indexed snapshots of weather pages, often days old, and prompting can't fix stale data (a retry instruction made answers confidently wrong). A `get_weather` tool runs on the phone against a live forecast API behind a `WeatherProvider` interface: Open-Meteo first (no key); a keyed provider such as Pirate Weather later, with its key server-side. This pulls the phase 3 tool registry forward. |
+| Tools and skills (§4b) | Tools shaped like MCP tool definitions (JSON Schema input, side-effect annotations); skills in the Agent Skills `SKILL.md` format with our `delivery` and `tools` fields. Both are existing standards, so nothing bespoke to maintain or explain. Confirmation is enforced by per-tool policy in phone code, never by skill text. Skills always loaded for now; progressive disclosure when they grow. |
+| Hybrid delivery via an MCP server behind the gateway (§4b) | Some things must run on the phone (SMS), some must run on the server (keyed APIs like Pirate Weather). An MCP server on the private network serves remote tools and draft skills; the phone stays the single owner of the tool loop. Chosen over a bespoke gateway route (non-standard) and Bifrost's MCP integration (splits the loop, ties tools to Bifrost). Adds `/mcp` to the gateway allowlist when step 4 is built. |
 | v1 capabilities (see §5a) | General Q&A with short spoken answers, including live web lookups; weather; contact lookup + phone call; SMS. |
 
 ## 3. Platform constraints (from research, Oct 2026)
@@ -107,11 +109,49 @@ Components and options:
 | Actions | Intents + direct APIs (see §5a) | AccessibilityService for UI driving (fragile) | Intents first; accessibility only if needed |
 | Screen context | `onHandleAssist` → send text summary to LLM | — | Later phase |
 
+### 4b. Tools and skills
+
+Two kinds of capability, borrowed from existing standards rather than invented: **tools** (code, shaped like MCP tool definitions) and **skills** (instructions, in the Agent Skills `SKILL.md` format). The model sees one tool list and one set of skill instructions, wherever each piece runs or comes from.
+
+**Tools** are functions the model can call.
+
+- Spec follows the MCP tool shape: `name`, `description`, `inputSchema` (JSON Schema), and annotations `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`.
+- **Local tools** run on the phone (contacts, calls, SMS, weather today). **Remote tools** run on the server, for anything that needs a key or server resources (e.g. Pirate Weather). The phone owns the tool loop for both, so the model can't tell them apart.
+- **Confirmation is enforced in phone code, never by skill or prompt text.** Each local tool declares its policy: SMS always confirms; a call is announced and confirms only when the contact match is ambiguous (§2); read-only tools never confirm. Remote tools with `destructiveHint` always confirm. Nothing a skill says can weaken this.
+- Anthropic's server-side web search stays a provider tool, enabled in the chat client, not a registry entry.
+
+**Skills** are instruction bundles.
+
+- A folder with a `SKILL.md`: YAML frontmatter, then plain instructions. Frontmatter: `name`, `description` (what it's for and when to use it), plus two fields of ours: `delivery` (`app` or `server`) and `tools` (tool names it relies on; omit for instruction-only skills).
+- Example: *weather* bundles `get_weather` with how to phrase answers ("one current reading, 'a low around…'"); *texting* carries how to read back an SMS; a *kitchen conversions* skill would be instructions only.
+- Domain rules live in skills, so the base system prompt stays generic (voice style, brevity, no reasoning narration).
+- **Loading: always loaded for now.** Every active skill's full text is appended to the system prompt, sorted by name so the prompt stays byte-stable for caching. A skill whose tools aren't available this session (permission off, server unreachable) is left out. Move to progressive disclosure (the prompt lists each skill's name and description, and a `load_skill` tool returns the body) when there are roughly ten or more skills or their text gets long; the `SKILL.md` format doesn't change.
+
+**Where skills come from: one source, two delivery paths.**
+
+- Source of truth is `skills/<name>/SKILL.md` in the repo.
+- `delivery: app` skills are bundled into the APK at build time. `delivery: server` skills are drafts, served live by the server (below), so they can change without an app rebuild.
+- Promoting a draft is changing `delivery: server` to `app` and rebuilding; the text doesn't move.
+- On the phone: bundled skills load first, then server skills; a server skill with the same name overrides the bundled one, so an existing skill can be revised as a draft. Server skills and the remote tool list are cached on the phone, used immediately, and refreshed in the background for the next session. Fetching never delays a turn; with the server down, bundled skills and the cache still work.
+
+**Server side: an MCP server behind the gateway.**
+
+- A small MCP server (TypeScript, Streamable HTTP, stateless) on the private network next to Bifrost, holding the keys its tools need in env. It serves remote tools (`tools/list`, `tools/call`) and draft skills as resources (`skill://<name>`), read from the deployed `skills/` directory.
+- The gateway adds `/mcp` to its route allowlist (§2), with the same token check and rate limit, forwarding without any key from the phone. It's a standard protocol, so the same server also works from other MCP clients.
+- Not Bifrost's MCP integration: that would run part of the tool loop inside the LLM gateway and tie tools to Bifrost (against the replaceable-unit design).
+
+**Rollout**, each step usable on its own:
+
+1. Bundled skills: `skills/` in the repo, the app build copies `delivery: app` skills into assets, prompt assembly, and weather's rules move from the base prompt into `skills/weather`. No server change.
+2. Tool spec: annotations and per-tool confirmation policy in the registry, plus the confirmation flow in the panel (voice or tap). Needed before anything sends or calls.
+3. Phase 3's local tools on top: `find_contact`, call, SMS, with their skills.
+4. Server half: the MCP server, the gateway's `/mcp` route, and an MCP client on the phone. Then remote tools (a Pirate Weather `WeatherProvider`) and draft skills.
+
 ## 5. Phases
 
 1. **Prove invocation.** App holds the assistant role on the Android 17 phone; gesture opens a panel.
 2. **Auth + voice round trip.** Authentik client; auth gateway + Bifrost on the home server with a budgeted virtual key. App signs in once, then STT → LLM → TTS with no tools. Verify budget enforcement and cost logging. Covers v1 capability 1.
-3. **Actions.** Tool registry with the v1 tools (§5a). Confirmation step for anything that sends or calls.
+3. **Actions.** Tools and skills per §4b, rollout steps 1–3: bundled skills, the tool spec with confirmation, then the v1 tools (§5a). Step 4 (server-side tools and draft skills via MCP) follows when a server tool is needed. (The tool loop and the weather tool were pulled forward into phase 2.)
 4. **Screen context.** Feed on-screen text to the LLM when invoked.
 5. **Gaps only.** AccessibilityService UI driving, wake word, HA integration, lock-screen use — each only if earlier phases leave a real need.
 
@@ -131,11 +171,14 @@ Exit criterion per phase: used daily for a week without wanting to go back to th
 
 Privacy note: contact lookup happens on the phone; only the matched name and number (not the address book) go to the LLM, and only when a tool call asks for them.
 
-**Future expansion (not planned):** additional tools/modules such as home control via Home Assistant, playing music, and adding calendar events. The tool registry should make these additive.
+**Future expansion (not planned):** additional tools and skills such as home control via Home Assistant, playing music, and adding calendar events. §4b makes these additive: a skill, plus a local or remote tool if it needs one.
 
 ## 6. Open questions
 
-No open questions remain for v1. (Web search through Bifrost was resolved by the phase 2 spike; see the decisions table and `docs/phase2-notes.md`.) New questions get added here as they come up.
+- **MCP client on the phone** (§4b step 4): the official Kotlin MCP SDK, or a minimal client for `tools/list`, `tools/call`, and `resources/read`. Decide by the SDK's size and maturity when step 4 starts.
+- **Weather provider long term:** keep Open-Meteo on the phone, or move to a keyed provider (Pirate Weather) as a remote tool once step 4 exists.
+
+(Web search through Bifrost was resolved by the phase 2 spike; see the decisions table and `docs/phase2-notes.md`.) New questions get added here as they come up.
 
 ## 7. Risks
 
