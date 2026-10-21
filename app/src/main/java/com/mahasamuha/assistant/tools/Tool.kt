@@ -21,6 +21,8 @@ class ToolRegistry(tools: List<Tool>) {
 
     val definitions: List<ToolDefinition> = tools.map { it.definition }
 
+    val names: Set<String> = byName.keys
+
     /** Never throws (except cancellation): failures become an error result the model can explain. */
     suspend fun execute(call: ToolCall): String {
         val tool = byName[call.name] ?: return error("Unknown tool ${call.name}")

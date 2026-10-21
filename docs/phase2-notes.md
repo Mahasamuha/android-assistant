@@ -102,3 +102,11 @@ STT (`PlatformSpeechToText`, on-device `SpeechRecognizer`) → `GatewayChatClien
 - Gotcha: Bifrost also streams the server-side web search as a `tool_calls` entry with an empty id and name, in a response that already contains the answer. Treated as a phone tool, it was echoed back next turn and Anthropic rejected the history with a 400 (`tool_use.name: String should have at least 1 character`). Fix: only run tools when `finish_reason` is `tool_calls`, and skip entries without a name.
 - A 24-hour forecast window wasn't enough for "tomorrow night" (the model improvised and corrected itself mid-sentence); 48 hours fixed it.
 - One panel, six questions without tapping: weather here (1.9 s + 1.1 s for the tool round), tomorrow night from the earlier result (0.8 s), Denver via a named place (0.9 + 0.9 s), store hours and a market close via web search (2.6–3.0 s), then silence ended the follow-up listen quietly.
+
+## Skills, rollout step 1 (2026-10-20, Pixel 6a)
+
+`skills/<name>/SKILL.md` in the repo; a Gradle task (`bundleSkills`) copies `delivery: app` skills into the APK's assets; the app parses them and appends active skills (all listed tools registered) to the system prompt, sorted by name. Weather's rules moved from the base prompt into `skills/weather`.
+
+- Verified: `Skills: weather (of 1)` at session start; the prompt sent to the gateway has the skill section and no weather rule left in the base; "What's the weather tomorrow afternoon" answered from the matching hours with one rounded reading (1.3 s + 0.8 s).
+- Invoking while locked got the spoken "Unlock your phone first", as intended for v1.
+- Search answers from Haiku with thinking off are sometimes hedged even when a result has the figure (a market close). Levers if it matters: low-effort thinking on search turns only (slower), or a larger model for search turns.

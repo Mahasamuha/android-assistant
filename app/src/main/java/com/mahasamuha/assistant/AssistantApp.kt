@@ -5,6 +5,7 @@ import com.mahasamuha.assistant.auth.AuthManager
 import com.mahasamuha.assistant.auth.TokenStore
 import com.mahasamuha.assistant.llm.ChatClient
 import com.mahasamuha.assistant.llm.GatewayChatClient
+import com.mahasamuha.assistant.skills.BundledSkills
 import com.mahasamuha.assistant.tools.ToolRegistry
 import com.mahasamuha.assistant.voice.LocationSource
 import com.mahasamuha.assistant.voice.PlatformLocationSource
@@ -20,4 +21,5 @@ class AssistantApp : Application() {
 
     // Tools the model can call. The weather provider is the swap point (e.g. a keyed provider later).
     val tools by lazy { ToolRegistry(listOf(WeatherTool(OpenMeteoWeather(), locationSource))) }
+    val skills by lazy { BundledSkills(assets).load() }
 }

@@ -11,6 +11,34 @@ val localConfig = Properties().apply {
     if (file.exists()) file.inputStream().use(::load)
 }
 
+/**
+ * Copies the skills marked `delivery: app` from the repo's skills/ folder into the APK's assets
+ * (plan §4b). Drafts (`delivery: server`) are served by the server instead.
+ */
+abstract class BundleSkills : DefaultTask() {
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val skillsDir: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun bundle() {
+        val out = outputDir.get().asFile.apply { deleteRecursively(); mkdirs() }
+        skillsDir.get().asFile.listFiles().orEmpty().filter { it.isDirectory }.sortedBy { it.name }.forEach { dir ->
+            val file = File(dir, "SKILL.md").takeIf { it.isFile } ?: return@forEach
+            val frontmatter = file.readText().substringAfter("---\n", "").substringBefore("\n---", "")
+            val delivery = Regex("""(?m)^delivery:\s*(\S+)""").find(frontmatter)?.groupValues?.get(1)
+            if (delivery == "app") file.copyTo(File(out, "skills/${dir.name}/SKILL.md"), overwrite = true)
+        }
+    }
+}
+
+val bundleSkills = tasks.register<BundleSkills>("bundleSkills") {
+    skillsDir.set(layout.projectDirectory.dir("../skills"))
+}
+
 fun localConfigValue(key: String): String =
     localConfig.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: error("Missing $key in config.local.properties (copy config.example.properties and fill it in)")
@@ -50,6 +78,12 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(bundleSkills, BundleSkills::outputDir)
     }
 }
 

@@ -53,6 +53,7 @@ class AssistantSession(context: Context) :
             stt = PlatformSpeechToText(context),
             chat = app.chatClient,
             tools = app.tools,
+            skills = app.skills,
             speaker = speaker,
             locationSource = app.locationSource,
             auth = app.auth,

@@ -12,6 +12,7 @@ import com.mahasamuha.assistant.llm.ChatMessage
 import com.mahasamuha.assistant.llm.ChatMessage.Role
 import com.mahasamuha.assistant.llm.ChatOptions
 import com.mahasamuha.assistant.llm.ToolCall
+import com.mahasamuha.assistant.skills.Skill
 import com.mahasamuha.assistant.tools.ToolRegistry
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
@@ -45,6 +46,7 @@ class VoiceSessionController(
     private val stt: SpeechToText,
     private val chat: ChatClient,
     private val tools: ToolRegistry,
+    skills: List<Skill>,
     private val speaker: Speaker,
     private val locationSource: LocationSource,
     private val auth: AuthManager,
@@ -55,6 +57,11 @@ class VoiceSessionController(
     val state: StateFlow<PanelState> = _state.asStateFlow()
 
     private val history = mutableListOf<ChatMessage>()
+
+    // A skill is only used when every tool it relies on is registered (plan §4b).
+    private val activeSkills = skills.filter { skill -> skill.tools.all { it in tools.names } }.also { active ->
+        Log.i(TAG, "Skills: ${active.joinToString { it.name }.ifEmpty { "none" }} (of ${skills.size})")
+    }
     private var turn: Job? = null
 
     /** Starts a new turn, interrupting any speech or turn in progress. */
@@ -93,7 +100,7 @@ class VoiceSessionController(
             _state.update { it.copy(reply = "", error = null) }
 
             val place = location.await()
-            if (history.isEmpty()) history += ChatMessage(Role.SYSTEM, VoicePrompt.system(place))
+            if (history.isEmpty()) history += ChatMessage(Role.SYSTEM, VoicePrompt.system(activeSkills, place))
             val turnStart = history.size
             history += ChatMessage(Role.USER, heard)
             _state.update { it.copy(phase = PanelState.Phase.Thinking) }
