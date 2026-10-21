@@ -4,12 +4,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -19,10 +24,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.mahasamuha.assistant.voice.PanelState.Phase
 
 /** Bottom sheet-style panel; tapping outside it closes the session. */
 @Composable
-fun SessionPanel(onClose: () -> Unit) {
+fun SessionPanel(state: PanelState, onListen: () -> Unit, onClose: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -45,19 +51,47 @@ fun SessionPanel(onClose: () -> Unit) {
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             tonalElevation = 6.dp,
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .navigationBarsPadding()
                     .padding(horizontal = 24.dp, vertical = 20.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    text = "Listening…",
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.weight(1f),
+                    text = when (state.phase) {
+                        Phase.Starting -> "…"
+                        Phase.Listening -> "Listening…"
+                        Phase.Thinking -> "Thinking…"
+                        Phase.Speaking, Phase.Idle -> ""
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
                 )
-                TextButton(onClick = onClose) { Text("Close") }
+                if (state.heard.isNotEmpty()) {
+                    Text(state.heard, style = MaterialTheme.typography.titleMedium)
+                }
+                if (state.reply.isNotEmpty()) {
+                    Text(
+                        state.reply,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
+                    )
+                }
+                state.error?.let {
+                    Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (state.phase == Phase.Idle || state.phase == Phase.Speaking) {
+                        Button(onClick = onListen) { Text("Ask") }
+                    } else {
+                        Text("")
+                    }
+                    TextButton(onClick = onClose) { Text("Close") }
+                }
             }
         }
     }

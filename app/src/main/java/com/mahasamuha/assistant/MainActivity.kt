@@ -1,8 +1,10 @@
 package com.mahasamuha.assistant
 
+import android.Manifest
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
@@ -42,7 +44,17 @@ class MainActivity : ComponentActivity() {
     private val app get() = application as AssistantApp
 
     private var roleHeld by mutableStateOf(false)
+    private var micAllowed by mutableStateOf(false)
+    private var locationAllowed by mutableStateOf(false)
     private var message by mutableStateOf<String?>(null)
+
+    private val requestMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        micAllowed = granted
+    }
+
+    private val requestLocation = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        locationAllowed = granted
+    }
 
     private val signIn = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         runReporting("Sign-in") {
@@ -60,13 +72,14 @@ class MainActivity : ComponentActivity() {
                 SetupScreen(
                     roleHeld = roleHeld,
                     signedIn = signedIn,
+                    micAllowed = micAllowed,
+                    locationAllowed = locationAllowed,
                     message = message,
                     onOpenAssistantSettings = { open(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) },
                     onSignIn = { runReporting("Sign-in") { signIn.launch(app.auth.signInIntent()); null } },
                     onSignOut = { runReporting("Sign-out") { app.auth.signOut(); "Signed out" } },
-                    onTestGateway = {
-                        runReporting("Gateway test") { GatewayProbe.run(app.config.gatewayUrls.first(), app.auth.freshAccessToken()) }
-                    },
+                    onAllowMic = { requestMic.launch(Manifest.permission.RECORD_AUDIO) },
+                    onAllowLocation = { requestLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
                 )
             }
         }
@@ -75,6 +88,8 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         roleHeld = getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_ASSISTANT)
+        micAllowed = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        locationAllowed = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
     }
 
     /** UI boundary: runs [block] and shows its result, or the error, as the status message. */
@@ -105,11 +120,14 @@ class MainActivity : ComponentActivity() {
 private fun SetupScreen(
     roleHeld: Boolean,
     signedIn: Boolean,
+    micAllowed: Boolean,
+    locationAllowed: Boolean,
     message: String?,
     onOpenAssistantSettings: () -> Unit,
     onSignIn: () -> Unit,
     onSignOut: () -> Unit,
-    onTestGateway: () -> Unit,
+    onAllowMic: () -> Unit,
+    onAllowLocation: () -> Unit,
 ) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -135,11 +153,22 @@ private fun SetupScreen(
             HorizontalDivider()
             Text(if (signedIn) "Signed in." else "Not signed in.", style = MaterialTheme.typography.titleMedium)
             if (signedIn) {
-                Button(onClick = onTestGateway) { Text("Test gateway") }
                 OutlinedButton(onClick = onSignOut) { Text("Sign out") }
             } else {
                 Button(onClick = onSignIn) { Text("Sign in") }
             }
+
+            HorizontalDivider()
+            Text(
+                if (micAllowed) "Microphone allowed." else "The assistant needs the microphone.",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            if (!micAllowed) Button(onClick = onAllowMic) { Text("Allow microphone") }
+            Text(
+                if (locationAllowed) "Approximate location allowed (city level, for local answers)."
+                else "Optional: approximate location, so questions like the weather know your city.",
+            )
+            if (!locationAllowed) OutlinedButton(onClick = onAllowLocation) { Text("Allow approximate location") }
             message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
     }

@@ -1,33 +1,32 @@
 package com.mahasamuha.assistant.voice
 
+import android.Manifest
+import android.app.KeyguardManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.media.AudioAttributes
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.service.voice.VoiceInteractionSession
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import android.view.View
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.mahasamuha.assistant.AssistantApp
 import com.mahasamuha.assistant.ui.AssistantTheme
 
 /**
- * One assistant invocation. The session isn't an Activity, so it supplies the
- * lifecycle and saved-state owners that ComposeView needs.
- *
- * Phase 1: logs what the system hands us and speaks a test line from onShow,
- * to check whether the panel counts as visible for audio on Android 17.
+ * One assistant invocation: the panel and its conversation. The session isn't an Activity, so it
+ * supplies the lifecycle and saved-state owners that ComposeView needs.
  */
 class AssistantSession(context: Context) :
     VoiceInteractionSession(context), LifecycleOwner, SavedStateRegistryOwner {
@@ -38,30 +37,36 @@ class AssistantSession(context: Context) :
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
 
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
-    private var speakWhenReady = false
-
-    // Main-thread only. If the session is destroyed mid-utterance, TTS shutdown waits for
-    // the utterance to end (phase 1 showed the engine keeps playing after the panel closes).
-    private var speaking = false
-    private var destroyed = false
+    private lateinit var speaker: Speaker
+    private lateinit var controller: VoiceSessionController
 
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "Session.onCreate")
         savedStateController.performRestore(null)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
-        tts = TextToSpeech(context, ::onTtsInit)
+
+        val app = context.applicationContext as AssistantApp
+        speaker = PlatformSpeaker(context)
+        controller = VoiceSessionController(
+            scope = lifecycleScope,
+            stt = PlatformSpeechToText(context),
+            chat = app.chatClient,
+            speaker = speaker,
+            locationSource = PlatformLocationSource(context),
+            auth = app.auth,
+            keyguard = context.getSystemService(KeyguardManager::class.java),
+            hasMicPermission = { context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },
+        )
     }
 
     override fun onCreateContentView(): View = ComposeView(context).apply {
         setViewTreeLifecycleOwner(this@AssistantSession)
         setViewTreeSavedStateRegistryOwner(this@AssistantSession)
         setContent {
+            val state by controller.state.collectAsState()
             AssistantTheme {
-                SessionPanel(onClose = { finish() })
+                SessionPanel(state = state, onListen = controller::listen, onClose = { finish() })
             }
         }
     }
@@ -70,7 +75,7 @@ class AssistantSession(context: Context) :
         super.onShow(args, showFlags)
         Log.i(TAG, "Session.onShow flags=${describeShowFlags(showFlags)} args=${describeBundle(args)}")
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
-        if (ttsReady) speakTestLine() else speakWhenReady = true
+        controller.listen()
     }
 
     override fun onHandleAssist(state: AssistState) {
@@ -88,87 +93,18 @@ class AssistantSession(context: Context) :
 
     override fun onHide() {
         Log.i(TAG, "Session.onHide")
-        // Dismissing the panel means "stop talking". Phase 3: when the session hides because
-        // it launched something itself (e.g. a call), skip this so the announcement finishes.
-        if (speaking) {
-            tts?.stop()
-            speaking = false
-        }
+        // Dismissing the panel means "stop talking". Phase 3: when the session hides because it
+        // launched something itself (e.g. a call), let the announcement finish instead.
+        controller.stop()
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
         super.onHide()
     }
 
     override fun onDestroy() {
-        Log.i(TAG, "Session.onDestroy speaking=$speaking")
-        destroyed = true
-        if (!speaking) shutdownTts()
+        Log.i(TAG, "Session.onDestroy")
+        speaker.shutdown()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         super.onDestroy()
-    }
-
-    private fun onTtsInit(status: Int) {
-        Log.i(TAG, "TTS init status=$status")
-        if (status != TextToSpeech.SUCCESS) return
-        ttsReady = true
-        tts?.setAudioAttributes(
-            AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANT)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build(),
-        )
-        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String) {
-                Log.i(TAG, "TTS onStart")
-                mainHandler.post { speaking = true }
-            }
-
-            override fun onDone(utteranceId: String) {
-                Log.i(TAG, "TTS onDone")
-                mainHandler.post(::onUtteranceEnded)
-            }
-
-            override fun onStop(utteranceId: String, interrupted: Boolean) {
-                Log.i(TAG, "TTS onStop interrupted=$interrupted")
-                mainHandler.post(::onUtteranceEnded)
-            }
-
-            @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String) {
-                Log.w(TAG, "TTS onError")
-                mainHandler.post(::onUtteranceEnded)
-            }
-
-            override fun onError(utteranceId: String, errorCode: Int) {
-                Log.w(TAG, "TTS onError code=$errorCode")
-                mainHandler.post(::onUtteranceEnded)
-            }
-        })
-        if (speakWhenReady) {
-            speakWhenReady = false
-            speakTestLine()
-        }
-    }
-
-    private fun onUtteranceEnded() {
-        speaking = false
-        if (destroyed) shutdownTts()
-    }
-
-    private fun shutdownTts() {
-        Log.i(TAG, "TTS shutdown")
-        tts?.shutdown()
-        tts = null
-    }
-
-    // Long enough to close the panel mid-sentence and hear whether audio stops.
-    private fun speakTestLine() {
-        val result = tts?.speak(
-            "Assistant panel open. This is a test line to check audio while the panel is visible.",
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "test-line",
-        )
-        Log.i(TAG, "TTS speak result=$result")
     }
 
     private companion object {
