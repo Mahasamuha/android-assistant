@@ -18,42 +18,55 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.lifecycleScope
+import com.mahasamuha.assistant.auth.NotSignedInException
 import com.mahasamuha.assistant.ui.AssistantTheme
 import com.mahasamuha.assistant.voice.TAG
+import kotlinx.coroutines.launch
 
-/** Explains setup and links to the settings screen where the assistant is chosen. */
+/** Explains setup, links to the assistant settings screen, and handles sign-in. */
 class MainActivity : ComponentActivity() {
+
+    private val app get() = application as AssistantApp
 
     private var roleHeld by mutableStateOf(false)
     private var message by mutableStateOf<String?>(null)
 
-    // Expected to fail: ROLE_ASSISTANT is believed not to be requestable. Kept to verify on API 37.
-    private val requestRole = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        Log.i(TAG, "ROLE_ASSISTANT request resultCode=${result.resultCode}")
-        refreshRoleState()
-        message = "Role request returned code ${result.resultCode}; role held: $roleHeld"
+    private val signIn = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        runReporting("Sign-in") {
+            app.auth.completeSignIn(result.data)
+            "Signed in (token key: ${app.auth.keySecurityLevel()})"
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
+            val signedIn by app.auth.signedIn.collectAsState()
             AssistantTheme {
                 SetupScreen(
                     roleHeld = roleHeld,
+                    signedIn = signedIn,
                     message = message,
                     onOpenAssistantSettings = { open(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) },
-                    onRequestRole = ::requestAssistantRole,
+                    onSignIn = { runReporting("Sign-in") { signIn.launch(app.auth.signInIntent()); null } },
+                    onSignOut = { runReporting("Sign-out") { app.auth.signOut(); "Signed out" } },
+                    onTestGateway = {
+                        runReporting("Gateway test") { GatewayProbe.run(app.config.gatewayUrls.first(), app.auth.freshAccessToken()) }
+                    },
                 )
             }
         }
@@ -61,18 +74,21 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        refreshRoleState()
-    }
-
-    private fun refreshRoleState() {
         roleHeld = getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_ASSISTANT)
     }
 
-    private fun requestAssistantRole() {
-        val roleManager = getSystemService(RoleManager::class.java)
-        val available = roleManager.isRoleAvailable(RoleManager.ROLE_ASSISTANT)
-        Log.i(TAG, "ROLE_ASSISTANT available=$available")
-        requestRole.launch(roleManager.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT))
+    /** UI boundary: runs [block] and shows its result, or the error, as the status message. */
+    private fun runReporting(label: String, block: suspend () -> String?) {
+        lifecycleScope.launch {
+            try {
+                block()?.let { message = it }
+            } catch (e: NotSignedInException) {
+                message = "$label: not signed in"
+            } catch (e: Exception) {
+                Log.w(TAG, "$label failed", e)
+                message = "$label failed: ${e.message}"
+            }
+        }
     }
 
     private fun open(intent: Intent) {
@@ -88,9 +104,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun SetupScreen(
     roleHeld: Boolean,
+    signedIn: Boolean,
     message: String?,
     onOpenAssistantSettings: () -> Unit,
-    onRequestRole: () -> Unit,
+    onSignIn: () -> Unit,
+    onSignOut: () -> Unit,
+    onTestGateway: () -> Unit,
 ) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -112,7 +131,15 @@ private fun SetupScreen(
                     "3. Long-press the power button to open the panel.",
             )
             Button(onClick = onOpenAssistantSettings) { Text("Open digital assistant settings") }
-            OutlinedButton(onClick = onRequestRole) { Text("Test: request assistant role") }
+
+            HorizontalDivider()
+            Text(if (signedIn) "Signed in." else "Not signed in.", style = MaterialTheme.typography.titleMedium)
+            if (signedIn) {
+                Button(onClick = onTestGateway) { Text("Test gateway") }
+                OutlinedButton(onClick = onSignOut) { Text("Sign out") }
+            } else {
+                Button(onClick = onSignIn) { Text("Sign in") }
+            }
             message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
     }

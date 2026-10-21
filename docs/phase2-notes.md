@@ -70,4 +70,15 @@ Stack running on the development workstation (`GATEWAY_BIND` on its LAN address)
 - From outside: Let's Encrypt certificate valid; HTTP redirects to HTTPS; `/healthz` 200; unauthenticated POST 401; other paths 404.
 - Gotchas: Let's Encrypt fails until the hostname has its own DNS record (no wildcard record on this domain). After adding it, a machine that looked the name up earlier keeps the negative answer cached for a while (`resolvectl flush-caches` clears it).
 
-Not yet tested: a request with a real Authentik-issued token. That comes with the app's sign-in.
+- First request with a real Authentik-issued token (app sign-in, Pixel 6a): 200 through the proxy, gateway and Bifrost, 1.6 s, `sub` matching the hashed ID from the preview.
+- A local DNS filter on the LAN cached the "no such name" answer from before the record existed, even longer than the workstation did; testing on mobile data worked. Flush its cache after adding a hostname.
+- Scanners found the new hostname within minutes (certificate transparency): dozens of `GET /` and probes like `POST /api/graphql`, all 404 from the gateway.
+
+## App sign-in (2026-10-20)
+
+AppAuth 0.11.1, authorization code + PKCE (S256) in a Custom Tab, scopes `openid offline_access`, redirect `com.mahasamuha.assistant:/oauth2redirect`. AppAuth's merged manifest brings the browser `<queries>` and the redirect receiver, so no extra manifest work on API 37.
+
+- Auth state (with the refresh token) is AES-256-GCM encrypted under an Android Keystore key generated with StrongBox when available, else TEE, and `setUnlockedDeviceRequired(true)`, so it can't be decrypted while the phone is locked.
+- Endpoints come from the gitignored `app/config.local.properties` into `BuildConfig` (`config.example.properties` is the template). Gateway URLs are a comma-separated list.
+- The setup screen's "Test gateway" button sends one non-streamed request with a fresh token (temporary; replaced by the streaming client).
+
