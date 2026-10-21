@@ -11,6 +11,7 @@ app/       Android app — Kotlin, Jetpack Compose, Gradle (Kotlin DSL)
 gateway/   Auth gateway — TypeScript on Node, pnpm
 deploy/    Server-side config: compose files for gateway + Bifrost, reverse proxy snippets, env templates (placeholders only)
 docs/      plan.md and any design notes
+skills/    SKILL.md instruction bundles (plan §4b); bundled into the app (delivery: app) or served as drafts (delivery: server)
 ```
 
 These are independent build units. Don't introduce a monorepo tool unless one is clearly needed.
@@ -70,7 +71,7 @@ No infrastructure specifics go into tracked files or commit messages. This cover
 
 ## Current phase
 
-Phase 1 is done (`docs/phase1-notes.md`). Phase 2 is working end to end in dev: gateway + Bifrost, app sign-in, and the voice round trip with web search and a weather tool (`docs/phase2-notes.md`). **Next is phase 3, following the tools-and-skills design in plan §4b**, starting with rollout step 1 (bundled skills). The phase 1 and phase 2 sections below are kept as the original briefs.
+Phase 1 is done (`docs/phase1-notes.md`). Phase 2 is working end to end in dev: gateway + Bifrost, app sign-in, and the voice round trip with web search and a weather tool (`docs/phase2-notes.md`). **Phase 3 follows the tools-and-skills design in plan §4b**: step 1 (bundled skills) is done; next is step 2 (tool annotations and the confirmation flow). The phase 1 and phase 2 sections below are kept as the original briefs.
 
 ### Phase 1 — Prove invocation
 
