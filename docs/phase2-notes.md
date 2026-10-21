@@ -60,3 +60,14 @@ With thinking off, the model usually streams a short preamble ("I'll check the c
 | Budget ($0.03 test cap) | Refused with 402 `budget_exceeded` at $0.0346; the phone gets the message to speak |
 
 Test-harness note: the host firewall blocks containers from reaching services on the host, so the mock identity provider has to run as a container on the compose network.
+
+## Dev deployment through the reverse proxy (2026-10-20)
+
+Stack running on the development workstation (`GATEWAY_BIND` on its LAN address), Nginx Proxy Manager on the home server forwarding the dev hostname to it, real Authentik issuer and audience in `deploy/local/gateway.env`, $10/month budget.
+
+- Discovery against the real issuer: issuer string matches exactly (trailing slash included), RS256 key in the JWKS, scopes `openid` and `offline_access`, PKCE `S256` supported.
+- Authentik's token preview: `aud` is the client ID as a single string; `sub` is the hashed user ID. (The preview's `exp` doesn't reflect the access token validity setting.)
+- From outside: Let's Encrypt certificate valid; HTTP redirects to HTTPS; `/healthz` 200; unauthenticated POST 401; other paths 404.
+- Gotchas: Let's Encrypt fails until the hostname has its own DNS record (no wildcard record on this domain). After adding it, a machine that looked the name up earlier keeps the negative answer cached for a while (`resolvectl flush-caches` clears it).
+
+Not yet tested: a request with a real Authentik-issued token. That comes with the app's sign-in.
