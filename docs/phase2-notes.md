@@ -96,7 +96,7 @@ STT (`PlatformSpeechToText`, on-device `SpeechRecognizer`) → `GatewayChatClien
 
 ## Weather tool and tool loop (2026-10-20, Pixel 6a)
 
-`get_weather` (phone-side tool, `WeatherProvider` interface, Open-Meteo implementation), run through a tool loop of up to 3 model rounds per turn.
+`get_weather` (phone-side tool calling Open-Meteo), run through a tool loop of up to 3 model rounds per turn. (It first sat behind a `WeatherProvider` interface; that was dropped once plan §4b made the tool itself the swap point: a keyed provider becomes a remote `get_weather` that overrides the local one.)
 
 - Bifrost streams function calls in standard OpenAI format (`tool_calls` deltas: id and name first, then argument fragments; `finish_reason: "tool_calls"`), alongside Anthropic's web search in the same request.
 - Gotcha: Bifrost also streams the server-side web search as a `tool_calls` entry with an empty id and name, in a response that already contains the answer. Treated as a phone tool, it was echoed back next turn and Anthropic rejected the history with a 400 (`tool_use.name: String should have at least 1 character`). Fix: only run tools when `finish_reason` is `tool_calls`, and skip entries without a name.
