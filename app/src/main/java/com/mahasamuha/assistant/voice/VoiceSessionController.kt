@@ -6,10 +6,13 @@ import android.util.Log
 import com.mahasamuha.assistant.auth.AuthManager
 import com.mahasamuha.assistant.auth.NotSignedInException
 import com.mahasamuha.assistant.llm.ChatClient
+import com.mahasamuha.assistant.llm.ChatEvent
 import com.mahasamuha.assistant.llm.ChatException
 import com.mahasamuha.assistant.llm.ChatMessage
 import com.mahasamuha.assistant.llm.ChatMessage.Role
 import com.mahasamuha.assistant.llm.ChatOptions
+import com.mahasamuha.assistant.llm.ToolCall
+import com.mahasamuha.assistant.tools.ToolRegistry
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -34,13 +37,14 @@ data class PanelState(
 private class UserFacingException(message: String) : Exception(message)
 
 /**
- * One panel's conversation: listen, ask the LLM, speak the reply sentence by sentence.
- * History lives as long as the session (plan §2: memory per invocation).
+ * One panel's conversation: listen, ask the LLM (running any tools it calls), speak the reply sentence
+ * by sentence. History lives as long as the session (plan §2: memory per invocation).
  */
 class VoiceSessionController(
     private val scope: CoroutineScope,
     private val stt: SpeechToText,
     private val chat: ChatClient,
+    private val tools: ToolRegistry,
     private val speaker: Speaker,
     private val locationSource: LocationSource,
     private val auth: AuthManager,
@@ -54,10 +58,12 @@ class VoiceSessionController(
     private var turn: Job? = null
 
     /** Starts a new turn, interrupting any speech or turn in progress. */
-    fun listen() {
+    fun listen() = startTurn(followUp = false)
+
+    private fun startTurn(followUp: Boolean) {
         turn?.cancel()
         speaker.stop()
-        turn = scope.launch { runTurn() }
+        turn = scope.launch { runTurn(followUp) }
     }
 
     fun stop() {
@@ -65,9 +71,10 @@ class VoiceSessionController(
         speaker.stop()
     }
 
-    private suspend fun runTurn() {
-        _state.value = PanelState(phase = PanelState.Phase.Starting)
-        var askedFollowUp = false
+    /** A follow-up turn listens right after an answer; if the user says nothing, it just stops. */
+    private suspend fun runTurn(followUp: Boolean) {
+        _state.value = if (followUp) _state.value.copy(phase = PanelState.Phase.Starting) else PanelState(phase = PanelState.Phase.Starting)
+        var answered = false
         try {
             checkPreconditions()
             // Look up the location while the user is talking, so it adds no delay.
@@ -76,25 +83,31 @@ class VoiceSessionController(
                 hear()
             } catch (e: Exception) {
                 location.cancel()
+                if (followUp && e is SttException && e.noSpeech) {
+                    _state.update { it.copy(phase = PanelState.Phase.Idle) }
+                    return
+                }
                 throw e
             }
             if (heard.isBlank()) throw UserFacingException("I didn't catch that.")
+            _state.update { it.copy(reply = "", error = null) }
 
             val place = location.await()
             if (history.isEmpty()) history += ChatMessage(Role.SYSTEM, VoicePrompt.system(place))
+            val turnStart = history.size
             history += ChatMessage(Role.USER, heard)
             _state.update { it.copy(phase = PanelState.Phase.Thinking) }
 
             val reply = try {
-                streamAndSpeak(place)
+                respond(place)
             } catch (e: Exception) {
-                history.removeAt(history.lastIndex) // keep history to completed exchanges
+                // Keep history to completed exchanges.
+                while (history.size > turnStart) history.removeAt(history.lastIndex)
                 throw e
             }
-            history += ChatMessage(Role.ASSISTANT, reply)
             speaker.awaitIdle()
             _state.update { it.copy(phase = PanelState.Phase.Idle) }
-            askedFollowUp = reply.trimEnd().endsWith("?")
+            answered = true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -107,8 +120,8 @@ class VoiceSessionController(
                 Log.w(TAG, "Couldn't speak the error", speakError)
             }
         }
-        // The assistant asked something ("Which Sam?"), so listen for the answer without a tap.
-        if (askedFollowUp) listen()
+        // Keep the conversation going: listen for the next question (or the answer to "Which Sam?").
+        if (answered) startTurn(followUp = true)
     }
 
     private fun checkPreconditions() {
@@ -132,22 +145,47 @@ class VoiceSessionController(
         return final
     }
 
-    /** Streams the reply, speaking each sentence as soon as it's complete. Returns the full text. */
-    private suspend fun streamAndSpeak(place: ApproximateLocation?): String {
-        val splitter = SentenceSplitter()
-        val reply = StringBuilder()
-        chat.stream(history.toList(), ChatOptions(timeZone = ZoneId.systemDefault().id, location = place)).collect { delta ->
-            reply.append(delta)
-            _state.update { it.copy(reply = reply.toString()) }
-            for (sentence in splitter.add(delta)) speakSentence(sentence)
+    /**
+     * Model rounds until it answers without calling tools. Each round's text is spoken as it streams,
+     * including a short "Let me check" before a tool call. Appends to history; returns all spoken text.
+     */
+    private suspend fun respond(place: ApproximateLocation?): String {
+        val options = ChatOptions(tools = tools.definitions, timeZone = ZoneId.systemDefault().id, location = place)
+        val spoken = StringBuilder()
+        repeat(MAX_ROUNDS) {
+            val splitter = SentenceSplitter()
+            val text = StringBuilder()
+            var calls = emptyList<ToolCall>()
+            chat.stream(history.toList(), options).collect { event ->
+                when (event) {
+                    is ChatEvent.Text -> {
+                        text.append(event.delta)
+                        _state.update { it.copy(reply = (spoken.toString() + text).trim()) }
+                        for (sentence in splitter.add(event.delta)) speakSentence(sentence)
+                    }
+                    is ChatEvent.ToolCalls -> calls = event.calls
+                }
+            }
+            splitter.flush()?.let { speakSentence(it) }
+            spoken.append(text).append(' ')
+
+            history += ChatMessage(Role.ASSISTANT, text.toString().ifEmpty { null }, toolCalls = calls)
+            if (calls.isEmpty()) return spoken.toString().trim()
+
+            _state.update { it.copy(phase = PanelState.Phase.Thinking) }
+            for (call in calls) history += ChatMessage(Role.TOOL, tools.execute(call), toolCallId = call.id)
         }
-        splitter.flush()?.let { speakSentence(it) }
-        return reply.toString()
+        throw IllegalStateException("No answer after $MAX_ROUNDS model rounds")
     }
 
     private suspend fun speakSentence(sentence: String) {
         _state.update { it.copy(phase = PanelState.Phase.Speaking) }
         speaker.speak(sentence)
+    }
+
+    private companion object {
+        /** Model calls per turn: enough for a tool call, its answer, and one more lookup. */
+        const val MAX_ROUNDS = 3
     }
 
     private fun userMessage(e: Exception): String = when (e) {
@@ -158,6 +196,7 @@ class VoiceSessionController(
         is ChatException.RateLimited -> "That's too many requests. Try again in a moment."
         is ChatException.Unauthorized -> "The server didn't accept the sign-in. Open the assistant app and sign in again."
         is ChatException.Unavailable -> "I can't reach the assistant server right now."
+        is ChatException.Rejected -> "The assistant server rejected that request."
         is SttException -> if (e.noSpeech) "I didn't catch that." else "Speech recognition failed."
         is SpeakerException -> "Text to speech isn't working."
         else -> "Something went wrong."

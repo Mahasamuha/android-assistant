@@ -93,3 +93,12 @@ STT (`PlatformSpeechToText`, on-device `SpeechRecognizer`) → `GatewayChatClien
 - With thinking off, the model sometimes narrates its reasoning in the answer ("The user's location isn't known, so I need to ask…") and comments on search results ("results conflict on timing"). The prompt now says to write only what the user should hear and never discuss the results; that removed the reasoning narration in testing.
 - Location: coarse fused location reverse-geocoded on the phone resolved to a city about 0.5 s after the panel opened, well before the user finished speaking.
 - Weather from web search is unreliable: results are snapshots, often two or more days old. Variants tried (same question, Haiku 5.5): as shipped, a hedged non-answer in 2.5 s; with "search again if outdated", a confident answer that reused the stale forecast and never searched again; with low thinking, two searches and a plausible answer but 8.5 s and garbled text. Hence the weather tool.
+
+## Weather tool and tool loop (2026-10-20, Pixel 6a)
+
+`get_weather` (phone-side tool, `WeatherProvider` interface, Open-Meteo implementation), run through a tool loop of up to 3 model rounds per turn.
+
+- Bifrost streams function calls in standard OpenAI format (`tool_calls` deltas: id and name first, then argument fragments; `finish_reason: "tool_calls"`), alongside Anthropic's web search in the same request.
+- Gotcha: Bifrost also streams the server-side web search as a `tool_calls` entry with an empty id and name, in a response that already contains the answer. Treated as a phone tool, it was echoed back next turn and Anthropic rejected the history with a 400 (`tool_use.name: String should have at least 1 character`). Fix: only run tools when `finish_reason` is `tool_calls`, and skip entries without a name.
+- A 24-hour forecast window wasn't enough for "tomorrow night" (the model improvised and corrected itself mid-sentence); 48 hours fixed it.
+- One panel, six questions without tapping: weather here (1.9 s + 1.1 s for the tool round), tomorrow night from the earlier result (0.8 s), Denver via a named place (0.9 + 0.9 s), store hours and a market close via web search (2.6–3.0 s), then silence ended the follow-up listen quietly.

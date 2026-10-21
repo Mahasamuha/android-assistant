@@ -2,28 +2,51 @@ package com.mahasamuha.assistant.llm
 
 import com.mahasamuha.assistant.voice.ApproximateLocation
 import kotlinx.coroutines.flow.Flow
+import org.json.JSONObject
 
-data class ChatMessage(val role: Role, val content: String) {
-    enum class Role(val wire: String) { SYSTEM("system"), USER("user"), ASSISTANT("assistant") }
+data class ToolCall(val id: String, val name: String, val arguments: String)
+
+/** A conversation entry. Assistant entries may carry tool calls; tool entries answer one by id. */
+data class ChatMessage(
+    val role: Role,
+    val content: String?,
+    val toolCalls: List<ToolCall> = emptyList(),
+    val toolCallId: String? = null,
+) {
+    enum class Role(val wire: String) { SYSTEM("system"), USER("user"), ASSISTANT("assistant"), TOOL("tool") }
 }
+
+/** A function the model may call, described with a JSON schema for its arguments. */
+data class ToolDefinition(val name: String, val description: String, val parameters: JSONObject)
 
 data class ChatOptions(
     val model: String = "anthropic/claude-haiku-5-5",
     val maxTokens: Int = 400,
     val webSearch: Boolean = true,
+    val tools: List<ToolDefinition> = emptyList(),
     /** Approximate location for web search: IANA time zone, plus city/region/country when known. */
     val timeZone: String? = null,
     val location: ApproximateLocation? = null,
 )
 
-/** The LLM endpoint. Implementations stream text deltas and fail with [ChatException]. */
+sealed interface ChatEvent {
+    data class Text(val delta: String) : ChatEvent
+
+    /** Emitted once, at the end of a response that asks for tools. */
+    data class ToolCalls(val calls: List<ToolCall>) : ChatEvent
+}
+
+/** The LLM endpoint. Implementations stream events and fail with [ChatException]. */
 interface ChatClient {
-    fun stream(messages: List<ChatMessage>, options: ChatOptions = ChatOptions()): Flow<String>
+    fun stream(messages: List<ChatMessage>, options: ChatOptions = ChatOptions()): Flow<ChatEvent>
 }
 
 sealed class ChatException(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class Unauthorized : ChatException("Token rejected by the gateway")
     class BudgetExceeded : ChatException("Spend budget exceeded")
     class RateLimited : ChatException("Rate limited")
+
+    /** The request itself was refused (a bug on our side, not an outage). */
+    class Rejected(val status: Int) : ChatException("Request rejected with $status")
     class Unavailable(message: String, cause: Throwable? = null) : ChatException(message, cause)
 }
