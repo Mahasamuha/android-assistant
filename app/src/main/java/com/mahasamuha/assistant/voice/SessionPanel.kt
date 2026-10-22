@@ -5,7 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,7 +49,7 @@ fun SessionPanel(
     onClose: () -> Unit,
 ) {
     val colors = AppTheme.colors
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .clickable(
@@ -57,9 +59,13 @@ fun SessionPanel(
             ),
         contentAlignment = Alignment.BottomCenter,
     ) {
+        // Starts as small as its content and grows upward with the conversation, up to two thirds of the screen.
+        val maxPanelHeight = maxHeight * 2 / 3
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = maxPanelHeight)
+                .animateContentSize()
                 // Swallow taps on the panel itself so they don't close it.
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -81,7 +87,8 @@ fun SessionPanel(
                     MonoLabel("assistant · ${statusText(state)}", modifier = Modifier.weight(1f))
                     Mark(size = 32.dp)
                 }
-                Transcript(state)
+                // Takes the space left under the cap; scrolls once the conversation outgrows it.
+                Transcript(state, Modifier.weight(1f, fill = false))
                 state.error?.let { error ->
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         MonoLabel("couldn't finish")
@@ -105,7 +112,7 @@ fun SessionPanel(
 
 /** The conversation so far as bubbles, kept scrolled to the newest; words still being heard show faded. */
 @Composable
-private fun Transcript(state: PanelState) {
+private fun Transcript(state: PanelState, modifier: Modifier = Modifier) {
     val listState = rememberLazyListState()
     val itemCount = state.transcript.size + if (state.hearing.isNotEmpty()) 1 else 0
     // Follow new bubbles and the one that is still streaming.
@@ -114,7 +121,7 @@ private fun Transcript(state: PanelState) {
     }
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         items(state.transcript) { message -> Bubble(message.text, message.fromUser) }
