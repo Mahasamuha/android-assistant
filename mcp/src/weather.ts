@@ -141,26 +141,46 @@ export async function weather(config: Config, request: WeatherRequest): Promise<
 }
 
 /**
- * Open-Meteo's geocoding (free, no key) for the place name. "City, Region" picks the match whose region
- * or country contains the part after the comma.
+ * Open-Meteo's geocoding (free, no key) for the place name. With a qualifier ("City, Region"), only a match
+ * whose state, county, country, or country code fits it is accepted: common names have many matches
+ * (Springfield, Oregon isn't among the first ten Springfields), and answering for the wrong place is
+ * worse than not answering, which lets the phone's own weather tool try instead.
  */
 async function geocode(query: string): Promise<Place> {
   const [name = "", ...rest] = query.split(",").map((part) => part.trim());
-  const qualifier = rest.join(" ").toLowerCase();
+  const qualifiers = rest.map((part) => part.toLowerCase()).filter((part) => part && part !== "usa" && part !== "us" && part !== "united states");
+  const wanted = qualifiers.map((part) => US_STATES[part] ?? part);
   const url = new URL("https://geocoding-api.open-meteo.com/v1/search");
   url.searchParams.set("name", name);
-  url.searchParams.set("count", "10");
+  url.searchParams.set("count", "100");
   url.searchParams.set("language", "en");
   const json = (await getJson(url, {}, "Place lookup")) as {
-    results?: { name: string; latitude: number; longitude: number; admin1?: string; country?: string; country_code?: string }[];
+    results?: { name: string; latitude: number; longitude: number; admin1?: string; admin2?: string; country?: string; country_code?: string }[];
   };
   const matches = json.results ?? [];
-  const best =
-    matches.find((m) => qualifier && [m.admin1, m.country, m.country_code].some((field) => field && qualifier.includes(field.toLowerCase()))) ??
-    matches[0];
+  const fits = (match: (typeof matches)[number]) =>
+    wanted.every((part) =>
+      [match.admin1, match.admin2, match.country, match.country_code].some((field) => {
+        const value = field?.toLowerCase();
+        return value !== undefined && (value === part || part.includes(value) || value.includes(part.replace(/ county$/, "")));
+      }),
+    );
+  const best = wanted.length > 0 ? matches.find(fits) : matches[0];
   if (!best) throw new WeatherError(`Couldn't find a place called ${query}`);
   return { name: [best.name, best.admin1].filter(Boolean).join(", "), latitude: best.latitude, longitude: best.longitude };
 }
+
+/** US state and DC abbreviations, for qualifiers like "Springfield, OR". */
+const US_STATES: Record<string, string> = {
+  al: "alabama", ak: "alaska", az: "arizona", ar: "arkansas", ca: "california", co: "colorado", ct: "connecticut",
+  de: "delaware", dc: "district of columbia", fl: "florida", ga: "georgia", hi: "hawaii", id: "idaho", il: "illinois",
+  in: "indiana", ia: "iowa", ks: "kansas", ky: "kentucky", la: "louisiana", me: "maine", md: "maryland",
+  ma: "massachusetts", mi: "michigan", mn: "minnesota", ms: "mississippi", mo: "missouri", mt: "montana",
+  ne: "nebraska", nv: "nevada", nh: "new hampshire", nj: "new jersey", nm: "new mexico", ny: "new york",
+  nc: "north carolina", nd: "north dakota", oh: "ohio", ok: "oklahoma", or: "oregon", pa: "pennsylvania",
+  ri: "rhode island", sc: "south carolina", sd: "south dakota", tn: "tennessee", tx: "texas", ut: "utah",
+  vt: "vermont", va: "virginia", wa: "washington", wv: "west virginia", wi: "wisconsin", wy: "wyoming",
+};
 
 async function fetchForecast(config: Config, place: Place): Promise<Forecast> {
   // The key goes in a header, so it never appears in a URL (or a log of one); the path needs a placeholder.
