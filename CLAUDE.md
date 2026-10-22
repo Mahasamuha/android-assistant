@@ -71,7 +71,7 @@ No infrastructure specifics go into tracked files or commit messages. This cover
 
 ## Current phase
 
-Phase 1 is done (`docs/phase1-notes.md`). Phase 2 is working end to end in dev: gateway + Bifrost, app sign-in, and the voice round trip with web search and a weather tool (`docs/phase2-notes.md`). **Phase 3 follows the tools-and-skills design in plan §4b**: steps 1 (bundled skills) and 2 (tool annotations and the confirmation flow) are done; step 3 is in progress: `find_contact`, `send_sms` and the `texting` skill are built and tested on device; `place_call` and the `calling` skill are built and awaiting their on-device test. The phase 1 and phase 2 sections below are kept as the original briefs.
+Phase 1 is done (`docs/phase1-notes.md`). Phase 2 is working end to end in dev: gateway + Bifrost, app sign-in, and the voice round trip with web search and a weather tool (`docs/phase2-notes.md`). **Phase 3 follows the tools-and-skills design in plan §4b**: steps 1 (bundled skills) and 2 (tool annotations and the confirmation flow) are done; step 3 is in progress: `find_contact`, `send_sms` and the `texting` skill are built and tested on device; `place_call` and the `calling` skill are built and tested on device (cancel during an announcement and an unknown-number ask are still untried). Step 4 (MCP server) follows when a server-side tool is needed. The phase 1 and phase 2 sections below are kept as the original briefs.
 
 ### Phase 1 — Prove invocation
 
