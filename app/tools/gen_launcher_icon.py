@@ -1,0 +1,54 @@
+"""Generates the adaptive launcher icon from the Mahasamuha mark geometry (same as ui/Mark.kt).
+
+Usage: python3 tools/gen_launcher_icon.py src/main/res
+"""
+import math, sys
+res = sys.argv[1]
+INK, INDIGO, SAGE, SAFFRON = '#232933', '#355BBD', '#489A68', '#EB881F'
+FIELD, PAPER = '#EAE7E4', '#F8F5EF'
+C = {'ink': INK, 'indigo': INDIGO, 'sage': SAGE, 'saffron': SAFFRON}
+NODES = [(50,50,'ink',7),(36,32,'indigo',5),(68,48,'indigo',5),(40,68,'indigo',5),(18,22,'indigo',3.8),
+         (88,38,'saffron',3.8),(58,88,'sage',4.2),(10,52,'sage',3.6),(72,16,'indigo',3.8),(20,82,'saffron',4)]
+EDGES = [(0,1,'indigo',.18,-1),(0,2,'indigo',.16,1),(0,3,'indigo',.18,1),(4,1,'indigo',.22,1),(5,2,'sage',.22,-1),
+         (6,3,'sage',.2,-1),(7,3,'sage',.28,1),(7,1,'indigo',.3,-1),(8,2,'indigo',.24,1),(9,3,'sage',.22,-1),(8,9,'saffron',.18,1)]
+f = lambda v: ('%.2f' % v).rstrip('0').rstrip('.')
+def arc(a, b, bow, s):
+    x1,y1 = NODES[a][:2]; x2,y2 = NODES[b][:2]
+    dx,dy = x2-x1, y2-y1; ln = math.hypot(dx,dy) or 1
+    cx = (x1+x2)/2 + s*(-dy/ln)*ln*bow; cy = (y1+y2)/2 + s*(dx/ln)*ln*bow
+    return f'M{f(x1)},{f(y1)} Q{f(cx)},{f(cy)} {f(x2)},{f(y2)}'
+def hexpath(r=8):
+    p = [(50,2),(92,26),(92,74),(50,98),(8,74),(8,26)]; n = len(p); out = []
+    lerp = lambda a,b,t: (a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t)
+    for i in range(n):
+        a,c,b = p[i-1], p[i], p[(i+1)%n]
+        i1 = lerp(a,c,1-r/math.hypot(c[0]-a[0],c[1]-a[1])); o1 = lerp(c,b,r/math.hypot(b[0]-c[0],b[1]-c[1]))
+        out.append(('L' if i else 'M') + f'{f(i1[0])},{f(i1[1])} Q{c[0]},{c[1]} {f(o1[0])},{f(o1[1])}')
+    return ' '.join(out) + ' Z'
+def circle(x,y,r): return f'M{f(x-r)},{f(y)} a{f(r)},{f(r)} 0 1,0 {f(2*r)},0 a{f(r)},{f(r)} 0 1,0 {f(-2*r)},0'
+
+# The hex's corners sit 48 units from the center; scale so they stay inside the 66dp safe zone of the 108dp icon.
+SCALE = 0.66
+OFFSET = 54 - 50 * SCALE
+HEAD = '''<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from the Mahasamuha mark geometry (ui/Mark.kt) by tools/gen_launcher_icon.py; edit the script, not this file. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+'''
+def mark(field, color=None):
+    out = [f'    <group android:translateX="{f(OFFSET)}" android:translateY="{f(OFFSET)}" android:scaleX="{SCALE}" android:scaleY="{SCALE}">']
+    if field: out.append(f'        <path android:fillColor="{FIELD}" android:pathData="{hexpath()}" />')
+    for a,b,c,bow,s in EDGES:
+        out.append(f'        <path android:strokeColor="{color or C[c]}" android:strokeAlpha="0.7" android:strokeWidth="1.7" '
+                   f'android:strokeLineCap="round" android:pathData="{arc(a,b,bow,s)}" />')
+    for x,y,c,r in NODES:
+        out.append(f'        <path android:fillColor="{color or C[c]}" android:pathData="{circle(x,y,r)}" />')
+    out.append('    </group>')
+    return '\n'.join(out) + '\n'
+open(f'{res}/drawable/ic_launcher_foreground.xml','w').write(HEAD + mark(True) + '</vector>\n')
+# Themed icons: the system tints this one color; the field is left out so the network reads as the shape.
+open(f'{res}/drawable/ic_launcher_monochrome.xml','w').write(HEAD + mark(False, '#FFFFFFFF') + '</vector>\n')
+open(f'{res}/drawable/ic_launcher_background.xml','w').write(HEAD + f'    <path android:fillColor="{PAPER}" android:pathData="M0,0h108v108h-108z" />\n</vector>\n')
