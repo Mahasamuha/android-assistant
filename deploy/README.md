@@ -11,7 +11,7 @@ phone ──HTTPS──▶ reverse proxy ──▶ gateway (:8080 in container) 
 
 | Tracked | Real copy (gitignored) | Contents |
 |---|---|---|
-| `.env.example` | `.env` | `GATEWAY_BIND` (host address and port for the reverse proxy), `BRAVE_API_KEY` (the MCP server's web search) |
+| `.env.example` | `.env` | `GATEWAY_BIND` (host address and port for the reverse proxy), `BRAVE_API_KEY` (the MCP server's web search), `PIRATE_WEATHER_API_KEY` (optional: the server's weather) |
 | `gateway.env.example` | `local/gateway.env` | Issuer, audience, virtual key, rate limits, body-log retention |
 | `bifrost.env.example` | `local/bifrost.env` | Anthropic API key, virtual key |
 | `bifrost/config.example.json` | `local/bifrost-config.json` | Bifrost config: provider key, virtual key name, model allowlist, budget |

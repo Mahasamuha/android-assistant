@@ -13,11 +13,13 @@ import com.mahasamuha.assistant.contacts.ContactDirectory
 import com.mahasamuha.assistant.contacts.FindContactTool
 import com.mahasamuha.assistant.llm.ChatClient
 import com.mahasamuha.assistant.llm.GatewayChatClient
+import com.mahasamuha.assistant.remote.FallbackTool
 import com.mahasamuha.assistant.remote.McpClient
 import com.mahasamuha.assistant.remote.RemoteTools
 import com.mahasamuha.assistant.skills.BundledSkills
 import com.mahasamuha.assistant.sms.SendSmsTool
 import com.mahasamuha.assistant.sms.SmsSender
+import com.mahasamuha.assistant.tools.ReadOnlyTool
 import com.mahasamuha.assistant.tools.ToolRegistry
 import com.mahasamuha.assistant.voice.LocationSource
 import com.mahasamuha.assistant.voice.PlatformLocationSource
@@ -58,7 +60,12 @@ class AssistantApp : Application() {
                 ))
             }
         }
-        val remote = remoteTools.load()
+        // A remote tool replaces a local one of the same name; a read-only local one stays behind it as the fallback.
+        val localByName = local.associateBy { it.definition.name }
+        val remote = remoteTools.load().map { tool ->
+            val shadowed = localByName[tool.definition.name]
+            if (tool is ReadOnlyTool && shadowed is ReadOnlyTool) FallbackTool(tool, shadowed) else tool
+        }
         val remoteNames = remote.map { it.definition.name }.toSet()
         return ToolRegistry(local.filter { it.definition.name !in remoteNames } + remote)
     }

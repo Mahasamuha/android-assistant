@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { search } from "./brave.js";
 import { loadConfig } from "./config.js";
+import { weather } from "./weather.js";
 
 const config = loadConfig();
 
@@ -32,6 +33,32 @@ function buildServer(): McpServer {
       return { content: [{ type: "text", text: JSON.stringify({ results }) }] };
     },
   );
+
+  if (config.pirateWeatherApiKey) {
+    server.registerTool(
+      "get_weather",
+      {
+        title: "Weather",
+        description:
+          "Live weather, including official alerts and rain in the next hour, for a place. Omit day for current conditions " +
+          "and the rest of today and tonight. Pass day for one date: its high, low, and hour-by-hour forecast. Pass day and " +
+          "end_day for a range, such as a weekend: a summary per day. Forecasts reach 7 days ahead. Use this for every " +
+          "weather question instead of web search.",
+        inputSchema: {
+          place: z.string().min(1).describe("A city or place name. When the user doesn't name one, use the user's location from the context."),
+          day: z.string().optional().describe("The date asked about, as YYYY-MM-DD, worked out from the current date. Omit it for now, today, or tonight."),
+          end_day: z.string().optional().describe("The last date of a range, as YYYY-MM-DD, with day as the first."),
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true },
+      },
+      async ({ place, day, end_day }) => {
+        const started = performance.now();
+        const result = await weather(config, { place, day, endDay: end_day });
+        log("get_weather", { alerts: Array.isArray(result.alerts) ? result.alerts.length : 0, ms: Math.round(performance.now() - started) });
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+      },
+    );
+  }
 
   return server;
 }

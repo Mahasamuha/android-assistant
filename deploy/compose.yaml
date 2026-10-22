@@ -31,6 +31,8 @@ services:
     restart: unless-stopped
     environment:
       BRAVE_API_KEY: ${BRAVE_API_KEY:?set BRAVE_API_KEY in deploy/.env}
+      # Optional: with it, the server's get_weather (Pirate Weather) overrides the phone's Open-Meteo one.
+      PIRATE_WEATHER_API_KEY: ${PIRATE_WEATHER_API_KEY:-}
       PORT: "8080"
     networks:
       - backend

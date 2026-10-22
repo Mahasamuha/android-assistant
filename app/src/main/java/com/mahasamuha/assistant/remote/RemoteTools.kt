@@ -38,6 +38,23 @@ class RemoteTools(private val client: McpClient) {
     }
 }
 
+/**
+ * A remote read-only tool that replaced a local one of the same name (plan §4b): the local one answers if
+ * the remote call fails, e.g. Pirate Weather unreachable → the phone's Open-Meteo get_weather.
+ */
+class FallbackTool(private val remote: ReadOnlyTool, private val local: ReadOnlyTool) : ReadOnlyTool {
+    override val definition: ToolDefinition = remote.definition
+
+    override suspend fun run(arguments: JSONObject): String = try {
+        remote.run(arguments)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "Remote ${definition.name} failed; using the local one", e)
+        local.run(arguments)
+    }
+}
+
 private class RemoteReadOnlyTool(override val definition: ToolDefinition, private val client: McpClient) : ReadOnlyTool {
     override suspend fun run(arguments: JSONObject): String = client.callTool(definition.name, arguments)
 }
