@@ -23,6 +23,9 @@ class SttException(val code: Int) : Exception("Speech recognition error $code") 
     val noSpeech get() = code == SpeechRecognizer.ERROR_NO_MATCH || code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
 }
 
+/** No on-device recognizer; the platform's default one may send audio off the phone, so it isn't used. */
+class OnDeviceSttUnavailableException : Exception("On-device speech recognition is unavailable")
+
 /**
  * One utterance per [listen]: partial results, then a single [SttEvent.Final], then completion.
  * [expected] are words or phrases to favor (e.g. yes/no while confirming); implementations may ignore it.
@@ -31,14 +34,15 @@ interface SpeechToText {
     fun listen(expected: List<String> = emptyList()): Flow<SttEvent>
 }
 
-/** The platform's on-device recognizer. Must be driven from the main thread. */
+/** The platform's on-device recognizer, with no fallback to the default one. Must be driven from the main thread. */
 class PlatformSpeechToText(private val context: Context) : SpeechToText {
 
     override fun listen(expected: List<String>): Flow<SttEvent> = callbackFlow {
-        val onDevice = SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
-        Log.i(TAG, "STT: on-device available=$onDevice")
-        val recognizer = if (onDevice) SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-        else SpeechRecognizer.createSpeechRecognizer(context)
+        if (!SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
+            Log.w(TAG, "STT: on-device recognition unavailable")
+            throw OnDeviceSttUnavailableException()
+        }
+        val recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
 
         recognizer.setRecognitionListener(object : RecognitionListener {
             override fun onPartialResults(partialResults: Bundle) {

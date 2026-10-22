@@ -28,7 +28,8 @@ class RemoteTools(private val client: McpClient) {
             Log.w(TAG, "Remote tools unavailable", e)
             null
         } ?: cached.orEmpty()
-        return definitions.map { definition ->
+        // Unique names: the registry rejects duplicates, which would leave the session with no tools.
+        return definitions.distinctBy { it.name }.map { definition ->
             if (definition.annotations.readOnlyHint) RemoteReadOnlyTool(definition, client) else RemoteActionTool(definition, client)
         }
     }

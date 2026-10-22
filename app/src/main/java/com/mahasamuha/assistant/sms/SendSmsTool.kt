@@ -1,6 +1,7 @@
 package com.mahasamuha.assistant.sms
 
 import com.mahasamuha.assistant.contacts.ContactDirectory
+import com.mahasamuha.assistant.contacts.Recipient
 import com.mahasamuha.assistant.llm.ToolAnnotations
 import com.mahasamuha.assistant.llm.ToolDefinition
 import com.mahasamuha.assistant.tools.ActionTool
@@ -11,8 +12,9 @@ import org.json.JSONObject
 
 /**
  * `send_sms`: always confirmed (plan §2). The read-back names the recipient from the phone's own
- * lookup of the number, so it says who will actually get the text, whatever the model believes.
- * [contacts] is null when contacts permission is off; the read-back then gives the number.
+ * lookup of the number, and the text goes to that contact's saved number, so it says who will actually
+ * get the text, whatever the model believes. [contacts] is null when contacts permission is off; the
+ * read-back then gives the number.
  */
 class SendSmsTool(private val sender: SmsSender, private val contacts: ContactDirectory?) : ActionTool {
 
@@ -38,17 +40,25 @@ class SendSmsTool(private val sender: SmsSender, private val contacts: ContactDi
 
     override suspend fun prepare(arguments: JSONObject): PendingAction {
         val number = arguments.optString("phone_number").trim()
-        val message = arguments.optString("message").trim()
+        // Control and invisible format characters aren't spoken, so they'd be sent without being heard.
+        val message = arguments.optString("message").filterNot { it != '\n' && Character.getType(it).toByte() in UNSPOKEN }.trim()
         require(ContactDirectory.isPhoneNumber(number, minDigits = 3)) { "A plain phone number is required: digits only, no codes or letters" }
         require(message.isNotEmpty()) { "The message is empty" }
+        require(message.length <= MAX_LENGTH) { "The message is too long to read back; keep it under $MAX_LENGTH characters" }
 
-        val recipient = contacts?.describe(number) ?: ContactDirectory.formatNumber(number)
+        val recipient = contacts?.recipient(number) ?: Recipient.of(number)
+        // The added period only paces the speech; the text is sent as written.
         val body = if (message.last() in ".!?") message else "$message."
-        return PendingAction(Confirmation.Ask("Text $recipient: $body Send it?")) {
-            when (sender.send(number, message)) {
+        return PendingAction(Confirmation.Ask("Text ${recipient.description}: $body Send it?")) {
+            when (sender.send(recipient.number, message)) {
                 SmsSender.Outcome.Sent -> JSONObject().put("status", "sent")
                 SmsSender.Outcome.Pending -> JSONObject().put("status", "sending").put("note", "The phone hasn't confirmed it was sent yet")
             }.toString()
         }
+    }
+
+    private companion object {
+        const val MAX_LENGTH = 320
+        val UNSPOKEN = setOf(Character.CONTROL, Character.FORMAT)
     }
 }

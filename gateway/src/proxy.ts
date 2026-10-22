@@ -53,7 +53,9 @@ export async function forward(
 
     // Upstream auth failures are a server misconfiguration. Passed through, the phone would read them as its own token being rejected.
     if (upstream.status === 401 || upstream.status === 403) {
-      log("upstream_rejected_gateway", { requestId, status: upstream.status, body: (await upstream.text()).slice(0, 500) });
+      // The body says what's misconfigured; any key it echoes is redacted before it reaches the container log.
+      const body = (await upstream.text()).slice(0, 500).replace(/sk-[\w-]+/g, "sk-<redacted>");
+      log("upstream_rejected_gateway", { requestId, status: upstream.status, body });
       throw new HttpError(502, "Upstream rejected the request");
     }
 

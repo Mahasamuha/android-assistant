@@ -17,6 +17,13 @@ services:
       - "${GATEWAY_BIND:-127.0.0.1:8787}:8080"
     volumes:
       - gateway-logs:/app/logs
+    # Internet-facing through the proxy: only the logs volume is writable.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - bifrost
       - mcp

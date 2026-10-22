@@ -8,6 +8,7 @@ import android.telecom.TelecomManager
 import android.telephony.TelephonyManager
 import com.mahasamuha.assistant.contacts.ContactDirectory
 import com.mahasamuha.assistant.contacts.PhoneNumber
+import com.mahasamuha.assistant.contacts.Recipient
 import com.mahasamuha.assistant.llm.ToolAnnotations
 import com.mahasamuha.assistant.llm.ToolDefinition
 import com.mahasamuha.assistant.tools.ActionTool
@@ -18,8 +19,8 @@ import org.json.JSONObject
 
 /**
  * `place_call`: announced when the phone's own contacts agree on who it is, asked first otherwise
- * (plan §2). The model picks the contact; this only checks that its pick holds up, and an announced
- * call dials the contact's saved number, never the model's text. The registry turns an announcement
+ * (plan §2). The model picks the contact; this only checks that its pick holds up, and a call to a
+ * contact dials the contact's saved number, never the model's text. The registry turns an announcement
  * into a question once the session has read outside content (search results).
  *
  * Calls go through [TelecomManager.placeCall], not an ACTION_CALL activity: with more than one app
@@ -61,24 +62,27 @@ class PlaceCallTool(
         require(ContactDirectory.isPhoneNumber(number, minDigits = 2)) { "A plain phone number is required: digits only, no codes or letters" }
 
         // Apps can't place emergency calls directly; open the default dialer with the number so the user presses call.
-        if (telephony.isEmergencyNumber(number)) {
-            return PendingAction(Confirmation.Announce("Opening the dialer for $number.", "Open the dialer for $number?")) {
-                launch(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null)).setPackage(telecom.defaultDialerPackage))
+        // Checked on digits only, since "9 1 1" passes the plain-number check.
+        val digits = number.filter { it.isDigit() || it == '+' }
+        if (telephony.isEmergencyNumber(digits)) {
+            return PendingAction(Confirmation.Announce("Opening the dialer for $digits.", "Open the dialer for $digits?")) {
+                launch(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", digits, null)).setPackage(telecom.defaultDialerPackage))
                 closePanel()
                 JSONObject().put("status", "dialer_opened").put("note", "The user presses call in the dialer").toString()
             }
         }
 
-        // Certain: announce the contact the model named and dial its saved number. Otherwise ask, naming
-        // everyone the number belongs to.
+        // Certain: announce the contact the model named. Otherwise ask, naming everyone the number belongs
+        // to. Either way a contact's saved number is dialed, never the model's text.
         val match = certainMatch(name, number)
-        val confirmation = match
-            ?.let { (contactName, saved) ->
-                val who = "$contactName, ${saved.label.lowercase()}"
-                Confirmation.Announce("Calling $who.", "Call $who?")
-            }
-            ?: Confirmation.Ask("Call ${contacts?.describe(number) ?: ContactDirectory.formatNumber(number)}?")
-        val dialed = match?.second?.number ?: number
+        val (confirmation, dialed) = if (match != null) {
+            val (contactName, saved) = match
+            val who = "$contactName, ${saved.label.lowercase()}"
+            Confirmation.Announce("Calling $who.", "Call $who?") to saved.number
+        } else {
+            val recipient = contacts?.recipient(number) ?: Recipient.of(number)
+            Confirmation.Ask("Call ${recipient.description}?") to recipient.number
+        }
         return PendingAction(confirmation) {
             placeCall(dialed)
             closePanel()

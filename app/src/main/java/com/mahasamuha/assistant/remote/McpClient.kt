@@ -73,7 +73,10 @@ class McpClient(private val gateways: List<Uri>, private val auth: AuthManager) 
                 connection.outputStream.use { it.write(body.toString().toByteArray()) }
                 val status = connection.responseCode
                 if (status != HttpURLConnection.HTTP_OK) throw McpException("MCP $method returned $status")
-                connection.inputStream.bufferedReader().use { it.readText() }
+                // Capped: the result goes to the model, so an oversized one costs tokens on every later round.
+                val bytes = connection.inputStream.use { it.readNBytes(MAX_RESPONSE_BYTES + 1) }
+                if (bytes.size > MAX_RESPONSE_BYTES) throw McpException("MCP $method response is over $MAX_RESPONSE_BYTES bytes")
+                bytes.toString(Charsets.UTF_8)
             } catch (e: IOException) {
                 throw McpException("MCP $method failed", e)
             } finally {
@@ -104,5 +107,6 @@ class McpClient(private val gateways: List<Uri>, private val auth: AuthManager) 
 
     private companion object {
         const val PROTOCOL_VERSION = "2025-06-18"
+        const val MAX_RESPONSE_BYTES = 64 * 1024
     }
 }

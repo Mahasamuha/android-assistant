@@ -364,6 +364,7 @@ class VoiceSessionController(
         is ChatException.Unavailable -> "I can't reach the assistant server right now."
         is ChatException.Rejected -> "The assistant server rejected that request."
         is SttException -> if (e.noSpeech) "I didn't catch that." else "Speech recognition failed."
+        is OnDeviceSttUnavailableException -> "On-device speech recognition isn't available. Check that the speech model is downloaded."
         is SpeakerException -> "Text to speech isn't working."
         else -> "Something went wrong."
     }

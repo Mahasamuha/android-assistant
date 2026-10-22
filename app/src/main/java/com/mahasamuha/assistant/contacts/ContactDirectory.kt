@@ -14,6 +14,17 @@ data class PhoneNumber(val number: String, val label: String)
 
 data class Contact(val name: String, val numbers: List<PhoneNumber>)
 
+/**
+ * How a read-back or announcement names a recipient, and the number that will be used. [description] is
+ * never phrased as a choice: it's read inside yes/no questions, and "A or B?" invites a name back.
+ */
+data class Recipient(val description: String, val number: String) {
+    companion object {
+        /** No matching contact (or no contacts permission): read the number itself. */
+        fun of(number: String) = Recipient(ContactDirectory.formatNumber(number), number)
+    }
+}
+
 /** Name and number lookups against the phone's contacts. Needs READ_CONTACTS. */
 class ContactDirectory(private val resolver: ContentResolver, private val resources: Resources) {
 
@@ -39,34 +50,39 @@ class ContactDirectory(private val resolver: ContentResolver, private val resour
     }
 
     /**
-     * Every contact saved with [number], with that number's label for each. Usually one; several when
-     * the same number is saved under more than one contact.
+     * Every contact the provider matches to [number], with the number as saved and its label. Usually one;
+     * several when the number is saved under more than one contact. The match is loose (it can ignore
+     * a country or area code), so a saved number may differ from [number].
      */
-    suspend fun namesFor(number: String): List<Pair<String, String>> = withContext(Dispatchers.IO) {
+    private suspend fun savedAs(number: String): List<Pair<String, PhoneNumber>> = withContext(Dispatchers.IO) {
         val uri = Uri.withAppendedPath(PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number))
-        val projection = arrayOf(PhoneLookup.DISPLAY_NAME, PhoneLookup.TYPE, PhoneLookup.LABEL)
-        val names = linkedMapOf<String, String>()
+        val projection = arrayOf(PhoneLookup.DISPLAY_NAME, PhoneLookup.NUMBER, PhoneLookup.TYPE, PhoneLookup.LABEL)
+        val byName = linkedMapOf<String, PhoneNumber>()
         resolver.query(uri, projection, null, null, null)?.use { cursor ->
             while (cursor.moveToNext()) {
                 val name = cursor.getString(0) ?: continue
-                names.putIfAbsent(name, Phone.getTypeLabel(resources, cursor.getInt(1), cursor.getString(2)).toString())
+                val saved = cursor.getString(1) ?: continue
+                val label = Phone.getTypeLabel(resources, cursor.getInt(2), cursor.getString(3)).toString()
+                byName.putIfAbsent(name, PhoneNumber(saved, label))
             }
         }
-        names.toList()
+        byName.toList()
     }
 
     /**
-     * How a read-back or announcement names [number]: the contact and number type, everyone it's saved
-     * under when it's shared ("the number saved as Sam Lee and Sam Ortiz"), or the formatted number.
-     * Never phrased as a choice: it's read inside yes/no questions, and "A or B?" invites a name back.
+     * Who a text or call to [number] goes to, and the number to actually use. When the number belongs to
+     * a contact, the read-back names the contact and the contact's saved number is used, so what the
+     * user hears is what happens, however the model wrote the number. Matches that are different saved
+     * numbers fall back to reading the model's number aloud.
      */
-    suspend fun describe(number: String): String {
-        val names = namesFor(number)
-        return when (names.size) {
-            0 -> formatNumber(number)
-            1 -> names.single().let { (name, label) -> "$name, ${label.lowercase()}" }
-            else -> "the number saved as " + names.joinToString(" and ") { it.first }
-        }
+    suspend fun recipient(number: String): Recipient {
+        val matches = savedAs(number)
+        val saved = matches.firstOrNull()?.second?.number
+        if (saved == null || matches.any { !sameNumber(it.second.number, saved) }) return Recipient.of(number)
+        val description = matches.singleOrNull()
+            ?.let { (name, phone) -> "$name, ${phone.label.lowercase()}" }
+            ?: ("the number saved as " + matches.joinToString(" and ") { it.first })
+        return Recipient(description, saved)
     }
 
     companion object {
