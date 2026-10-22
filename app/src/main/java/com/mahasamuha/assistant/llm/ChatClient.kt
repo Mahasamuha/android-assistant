@@ -64,9 +64,15 @@ sealed interface ChatEvent {
     /** Emitted once, at the end of a response that asks for tools. */
     data class ToolCalls(val calls: List<ToolCall>) : ChatEvent
 
-    /** Emitted last: what to keep in [ChatMessage.replay] for this response. */
-    data class Finished(val replay: List<JSONObject>) : ChatEvent
+    /**
+     * Emitted last: what to keep in [ChatMessage.replay] for this response, and the web pages its searches
+     * found (shown with the answer; Anthropic requires sources alongside search answers shown to users).
+     */
+    data class Finished(val replay: List<JSONObject>, val sources: List<SourceLink> = emptyList()) : ChatEvent
 }
+
+/** A web page a search returned. */
+data class SourceLink(val title: String, val url: String)
 
 /** The LLM endpoint. Implementations stream events and fail with [ChatException]. */
 interface ChatClient {

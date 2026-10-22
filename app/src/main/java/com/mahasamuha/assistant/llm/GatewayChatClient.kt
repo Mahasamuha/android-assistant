@@ -72,7 +72,7 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
                 val calls = kept.filter { it.optString("type") == "function_call" }
                     .map { ToolCall(it.getString("call_id"), it.getString("name"), it.optString("arguments")) }
                 if (calls.isNotEmpty()) send(ChatEvent.ToolCalls(calls))
-                send(ChatEvent.Finished(kept))
+                send(ChatEvent.Finished(kept, sources(kept)))
                 close()
             } catch (e: ChatException) {
                 close(e)
@@ -134,6 +134,22 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
             }
         }
     }
+
+    /**
+     * Pages the searches returned, in order, without repeats. These are all results, not only the cited
+     * ones: streamed message items arrive without their citation annotations.
+     */
+    private fun sources(items: List<JSONObject>): List<SourceLink> = items
+        .filter { it.optString("type") == "web_search_call" }
+        .flatMap { item ->
+            val sources = item.optJSONObject("action")?.optJSONArray("sources") ?: JSONArray()
+            (0 until sources.length()).mapNotNull { i ->
+                val source = sources.optJSONObject(i) ?: return@mapNotNull null
+                val url = source.optString("url").takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: return@mapNotNull null
+                SourceLink(source.optString("title").ifBlank { Uri.parse(url).host.orEmpty() }, url)
+            }
+        }
+        .distinctBy { it.url }
 
     private fun event(payload: String): JSONObject? = try {
         JSONObject(payload)

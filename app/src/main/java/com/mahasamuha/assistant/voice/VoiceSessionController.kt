@@ -11,6 +11,7 @@ import com.mahasamuha.assistant.llm.ChatException
 import com.mahasamuha.assistant.llm.ChatMessage
 import com.mahasamuha.assistant.llm.ChatMessage.Role
 import com.mahasamuha.assistant.llm.ChatOptions
+import com.mahasamuha.assistant.llm.SourceLink
 import com.mahasamuha.assistant.llm.ToolCall
 import com.mahasamuha.assistant.skills.Skill
 import com.mahasamuha.assistant.tools.Confirmation
@@ -44,8 +45,16 @@ data class PanelState(
     enum class Phase { Starting, Listening, Thinking, Speaking, Idle }
 }
 
-/** A chat bubble, or with [note] a small label between bubbles (e.g. "no reply heard"). */
-data class PanelMessage(val fromUser: Boolean, val text: String, val note: Boolean = false)
+/**
+ * A chat bubble, or with [note] a small label between bubbles (e.g. "no reply heard"). [sources] are the
+ * pages a web search behind this reply found.
+ */
+data class PanelMessage(
+    val fromUser: Boolean,
+    val text: String,
+    val note: Boolean = false,
+    val sources: List<SourceLink> = emptyList(),
+)
 
 /** A problem the user can act on; the message is spoken as is. */
 private class UserFacingException(message: String) : Exception(message)
@@ -186,6 +195,8 @@ class VoiceSessionController(
             val text = StringBuilder()
             var calls = emptyList<ToolCall>()
             var replay = emptyList<JSONObject>()
+            var sources = emptyList<SourceLink>()
+            var bubble: Int? = null // this round's reply bubble in the transcript
             chat.stream(history.toList(), options).collect { event ->
                 when (event) {
                     is ChatEvent.Text -> {
@@ -197,19 +208,28 @@ class VoiceSessionController(
                             } else {
                                 // The reply is arriving, so the panel stops showing the waiting indicator.
                                 addMessage(fromUser = false, text.toString().trim())
+                                bubble = _state.value.transcript.lastIndex
                                 _state.update { it.copy(phase = PanelState.Phase.Speaking) }
                             }
                         }
                         for (sentence in splitter.add(event.delta)) speakSentence(sentence)
                     }
                     is ChatEvent.ToolCalls -> calls = event.calls
-                    is ChatEvent.Finished -> replay = event.replay
+                    is ChatEvent.Finished -> {
+                        replay = event.replay
+                        sources = event.sources
+                    }
                 }
             }
             splitter.flush()?.let { speakSentence(it) }
             spoken.append(text).append(' ')
 
             history += ChatMessage(Role.ASSISTANT, text.toString().ifEmpty { null }, toolCalls = calls, replay = replay)
+            bubble?.takeIf { sources.isNotEmpty() }?.let { index ->
+                _state.update { state ->
+                    state.copy(transcript = state.transcript.mapIndexed { i, m -> if (i == index) m.copy(sources = sources) else m })
+                }
+            }
             if (calls.isEmpty()) return spoken.toString().trim()
 
             for (call in calls) {
