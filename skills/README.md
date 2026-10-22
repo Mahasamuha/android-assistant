@@ -23,4 +23,4 @@ Frontmatter is a small YAML subset: `key: value` lines, and `tools` as a `[a, b]
 Rules:
 - A skill is included only when every tool it lists is available in that session.
 - Skills can't change confirmation behavior: that's enforced per tool in the app.
-- Write for the ear: the base prompt already covers brevity and plain text, so a skill only adds what's specific to its domain.
+- Write for the ear and keep to the domain. The base prompt (`VoicePrompt.kt`) already covers brevity, plain text, no narration, asking short which-one questions, and how to use tools and actions: say nothing before acting, leave confirmation to the phone, don't claim success early, handle `not_confirmed`, look things up fresh, never invent details. A skill only adds what's specific to its domain.

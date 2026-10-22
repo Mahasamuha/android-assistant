@@ -138,7 +138,7 @@ Two kinds of capability, borrowed from existing standards rather than invented: 
 
 - A folder with a `SKILL.md`: YAML frontmatter, then plain instructions. Frontmatter: `name`, `description` (what it's for and when to use it), plus two fields of ours: `delivery` (`app` or `server`) and `tools` (tool names it relies on; omit for instruction-only skills).
 - Example: *weather* bundles `get_weather` with how to phrase answers ("one current reading, 'a low around…'"); *texting* carries how to read back an SMS; a *kitchen conversions* skill would be instructions only.
-- Domain rules live in skills, so the base system prompt stays generic (voice style, brevity, no reasoning narration).
+- Domain rules live in skills, so the base system prompt stays generic: voice style, brevity, no reasoning narration, and how to behave around tools and actions (nothing said before an action, the phone confirms, no claiming success before the result, declined actions, fresh lookups). Rules that first appear in one skill move to the base prompt once they apply to every tool.
 - **Loading: always loaded for now.** Every active skill's full text is appended to the system prompt, sorted by name so the prompt stays byte-stable for caching. A skill whose tools aren't available this session (permission off, server unreachable) is left out. Move to progressive disclosure (the prompt lists each skill's name and description, and a `load_skill` tool returns the body) when there are roughly ten or more skills or their text gets long; the `SKILL.md` format doesn't change.
 
 **Where skills come from: one source, two delivery paths.**
