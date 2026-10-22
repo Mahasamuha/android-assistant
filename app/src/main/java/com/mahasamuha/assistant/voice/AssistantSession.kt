@@ -52,7 +52,7 @@ class AssistantSession(context: Context) :
             scope = lifecycleScope,
             stt = PlatformSpeechToText(context),
             chat = app.chatClient,
-            tools = app.tools,
+            tools = app.sessionTools(),
             skills = app.skills,
             speaker = speaker,
             locationSource = app.locationSource,

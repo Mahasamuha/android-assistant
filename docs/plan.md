@@ -119,6 +119,7 @@ Two kinds of capability, borrowed from existing standards rather than invented: 
 **Tools** are functions the model can call.
 
 - Spec follows the MCP tool shape: `name`, `description`, `inputSchema` (JSON Schema), and annotations `title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`. Unset annotations take MCP's defaults (not read-only, destructive, not idempotent, open-world), so an unannotated tool is treated as having side effects. Annotations stay on the phone; the chat request carries only name, description, and schema.
+- Local tools are registered per session, only when their permission is granted (contacts, SMS), so a skill that needs a missing one drops out with them.
 - Two kinds of local tool. **Read-only tools** (`readOnlyHint: true`, e.g. `get_weather`) just run. **Action tools** split into *prepare* (validate and resolve the arguments, return a pending action) and *perform*. The registry rejects a tool whose kind contradicts its `readOnlyHint`.
 - **Local tools** run on the phone (contacts, calls, SMS, weather today). **Remote tools** run on the server, for anything that needs a key or server resources (e.g. Pirate Weather). The phone owns the tool loop for both, so the model can't tell them apart.
 - **Confirmation is enforced in phone code, never by skill or prompt text.** Each local tool declares its policy: SMS always confirms; a call is announced and confirms only when the contact match is ambiguous (§2); read-only tools never confirm. Remote tools with `destructiveHint` always confirm. Nothing a skill says can weaken this.
@@ -156,7 +157,7 @@ Two kinds of capability, borrowed from existing standards rather than invented: 
 
 1. Bundled skills: `skills/` in the repo, the app build copies `delivery: app` skills into assets, prompt assembly, and weather's rules move from the base prompt into `skills/weather`. No server change.
 2. Tool spec: annotations and per-tool confirmation policy in the registry, plus the confirmation flow in the panel (voice or tap). Needed before anything sends or calls. Built; first exercised on the phone by step 3's SMS tool.
-3. Phase 3's local tools on top: `find_contact`, call, SMS, with their skills.
+3. Phase 3's local tools on top: `find_contact`, call, SMS, with their skills. `find_contact` returns only the matched contacts' names and numbers; `send_sms(phone_number, message)` takes a number from it, and its read-back names the recipient from the phone's own reverse lookup of that number. Built: `find_contact`, `send_sms`, and the `texting` skill. Next: the call tool.
 4. Server half: the MCP server, the gateway's `/mcp` route, and an MCP client on the phone. Then remote tools (e.g. a Pirate Weather `get_weather`) and draft skills.
 
 ## 5. Phases

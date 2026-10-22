@@ -71,7 +71,7 @@ No infrastructure specifics go into tracked files or commit messages. This cover
 
 ## Current phase
 
-Phase 1 is done (`docs/phase1-notes.md`). Phase 2 is working end to end in dev: gateway + Bifrost, app sign-in, and the voice round trip with web search and a weather tool (`docs/phase2-notes.md`). **Phase 3 follows the tools-and-skills design in plan §4b**: steps 1 (bundled skills) and 2 (tool annotations and the confirmation flow) are done; next is step 3 (`find_contact`, call, SMS), which also gives the confirmation flow its first on-device test. The phase 1 and phase 2 sections below are kept as the original briefs.
+Phase 1 is done (`docs/phase1-notes.md`). Phase 2 is working end to end in dev: gateway + Bifrost, app sign-in, and the voice round trip with web search and a weather tool (`docs/phase2-notes.md`). **Phase 3 follows the tools-and-skills design in plan §4b**: steps 1 (bundled skills) and 2 (tool annotations and the confirmation flow) are done; step 3 is in progress: `find_contact`, `send_sms` and the `texting` skill are built (awaiting the first on-device test, which is also the confirmation flow's); the call tool is next. The phase 1 and phase 2 sections below are kept as the original briefs.
 
 ### Phase 1 — Prove invocation
 
