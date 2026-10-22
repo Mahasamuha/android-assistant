@@ -1,7 +1,10 @@
 package com.mahasamuha.assistant.calls
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
+import android.telecom.TelecomManager
 import android.telephony.TelephonyManager
 import com.mahasamuha.assistant.contacts.ContactDirectory
 import com.mahasamuha.assistant.llm.ToolAnnotations
@@ -17,13 +20,18 @@ import org.json.JSONObject
  * (plan §2). The model picks the contact; this only checks that its pick holds up, so a number that
  * doesn't belong to the named contact can never be dialed on an announcement alone.
  *
- * [launch] starts an activity from the session; it must run while the panel is visible (Android 17
- * background activity launch rules). [contacts] is null when contacts permission is off.
+ * Calls go through [TelecomManager.placeCall], not an ACTION_CALL activity: with more than one app
+ * handling ACTION_CALL, the activity resolved to a chooser that opened behind the panel (on-device
+ * test). [launch] starts an activity from the session while it's visible (only the emergency dialer
+ * now); [closePanel] dismisses the session once the call screen takes over. [contacts] is null when
+ * contacts permission is off.
  */
 class PlaceCallTool(
     private val contacts: ContactDirectory?,
     private val telephony: TelephonyManager,
+    private val telecom: TelecomManager,
     private val launch: (Intent) -> Unit,
+    private val closePanel: () -> Unit,
 ) : ActionTool {
 
     override val definition = ToolDefinition(
@@ -51,30 +59,40 @@ class PlaceCallTool(
         val name = arguments.optString("contact_name").trim()
         require(number.count { it.isDigit() } >= 2) { "A phone number is required" }
 
-        // Apps can't place emergency calls directly; open the dialer with the number so the user presses call.
+        // Apps can't place emergency calls directly; open the default dialer with the number so the user presses call.
         if (telephony.isEmergencyNumber(number)) {
             return PendingAction(Confirmation.Announce("Opening the dialer for $number.")) {
-                launch(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null)))
+                launch(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null)).setPackage(telecom.defaultDialerPackage))
+                closePanel()
                 JSONObject().put("status", "dialer_opened").put("note", "The user presses call in the dialer").toString()
             }
         }
 
-        val who = contacts?.describe(number) ?: ContactDirectory.formatNumber(number)
-        val confirmation = if (isCertain(name, number)) Confirmation.Announce("Calling $who.") else Confirmation.Ask("Call $who?")
+        // Certain: announce the contact the model named. Otherwise ask, naming everyone the number belongs to.
+        val confirmation = certainMatch(name, number)
+            ?.let { (contactName, label) -> Confirmation.Announce("Calling $contactName, ${label.lowercase()}.") }
+            ?: Confirmation.Ask("Call ${contacts?.describe(number) ?: ContactDirectory.formatNumber(number)}?")
         return PendingAction(confirmation) {
-            launch(Intent(Intent.ACTION_CALL, Uri.fromParts("tel", number, null)))
+            placeCall(number)
+            closePanel()
             JSONObject().put("status", "calling").toString()
         }
     }
 
+    // Only registered while CALL_PHONE is granted (AssistantApp.sessionTools).
+    @SuppressLint("MissingPermission")
+    private fun placeCall(number: String) {
+        telecom.placeCall(Uri.fromParts("tel", number, null), Bundle())
+    }
+
     /**
-     * Certain = [name] matches exactly one contact, [number] is one of that contact's numbers, and no
-     * other number of the contact has the same type (plan §5a: one match, one number of the type).
+     * The contact name and number type when certain: [name] matches exactly one contact, [number] is one
+     * of its numbers, and no other number of that contact has the same type (plan §5a). Null otherwise.
      */
-    private suspend fun isCertain(name: String, number: String): Boolean {
-        if (contacts == null || name.isEmpty()) return false
-        val contact = contacts.find(name).singleOrNull() ?: return false
-        val chosen = contact.numbers.firstOrNull { ContactDirectory.sameNumber(it.number, number) } ?: return false
-        return contact.numbers.count { it.label == chosen.label } == 1
+    private suspend fun certainMatch(name: String, number: String): Pair<String, String>? {
+        if (contacts == null || name.isEmpty()) return null
+        val contact = contacts.find(name).singleOrNull() ?: return null
+        val chosen = contact.numbers.firstOrNull { ContactDirectory.sameNumber(it.number, number) } ?: return null
+        return if (contact.numbers.count { it.label == chosen.label } == 1) contact.name to chosen.label else null
     }
 }
