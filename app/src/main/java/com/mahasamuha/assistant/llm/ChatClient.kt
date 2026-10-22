@@ -16,8 +16,25 @@ data class ChatMessage(
     enum class Role(val wire: String) { SYSTEM("system"), USER("user"), ASSISTANT("assistant"), TOOL("tool") }
 }
 
-/** A function the model may call, described with a JSON schema for its arguments. */
-data class ToolDefinition(val name: String, val description: String, val parameters: JSONObject)
+/** A function the model may call, in the MCP tool shape: a JSON schema for its arguments, plus annotations. */
+data class ToolDefinition(
+    val name: String,
+    val description: String,
+    val inputSchema: JSONObject,
+    val annotations: ToolAnnotations = ToolAnnotations(),
+)
+
+/**
+ * MCP tool annotations, with MCP's defaults: an unannotated tool is assumed to have side effects. They
+ * steer the phone's confirmation rules and aren't sent to the model.
+ */
+data class ToolAnnotations(
+    val title: String? = null,
+    val readOnlyHint: Boolean = false,
+    val destructiveHint: Boolean = true,
+    val idempotentHint: Boolean = false,
+    val openWorldHint: Boolean = true,
+)
 
 data class ChatOptions(
     val model: String = "anthropic/claude-haiku-5-5",

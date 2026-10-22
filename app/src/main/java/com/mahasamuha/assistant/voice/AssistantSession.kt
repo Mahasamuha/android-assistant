@@ -68,7 +68,12 @@ class AssistantSession(context: Context) :
         setContent {
             val state by controller.state.collectAsState()
             AssistantTheme {
-                SessionPanel(state = state, onListen = controller::listen, onClose = { finish() })
+                SessionPanel(
+                    state = state,
+                    onListen = controller::listen,
+                    onAnswer = controller::answer,
+                    onClose = { finish() },
+                )
             }
         }
     }

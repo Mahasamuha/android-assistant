@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -24,11 +25,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.mahasamuha.assistant.tools.Confirmation
 import com.mahasamuha.assistant.voice.PanelState.Phase
 
 /** Bottom sheet-style panel; tapping outside it closes the session. */
 @Composable
-fun SessionPanel(state: PanelState, onListen: () -> Unit, onClose: () -> Unit) {
+fun SessionPanel(
+    state: PanelState,
+    onListen: () -> Unit,
+    onAnswer: (confirmed: Boolean) -> Unit,
+    onClose: () -> Unit,
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -80,12 +87,21 @@ fun SessionPanel(state: PanelState, onListen: () -> Unit, onClose: () -> Unit) {
                 state.error?.let {
                     Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
                 }
+                state.confirming?.let { confirmation ->
+                    Text(confirmation.text, style = MaterialTheme.typography.titleMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (confirmation is Confirmation.Ask) {
+                            Button(onClick = { onAnswer(true) }) { Text("Confirm") }
+                        }
+                        OutlinedButton(onClick = { onAnswer(false) }) { Text("Cancel") }
+                    }
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (state.phase == Phase.Idle || state.phase == Phase.Speaking) {
+                    if (state.confirming == null && (state.phase == Phase.Idle || state.phase == Phase.Speaking)) {
                         Button(onClick = onListen) { Text("Ask") }
                     } else {
                         Text("")

@@ -87,7 +87,7 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
             tools.put(JSONObject().put("type", "function").put("function", JSONObject()
                 .put("name", tool.name)
                 .put("description", tool.description)
-                .put("parameters", tool.parameters)))
+                .put("parameters", tool.inputSchema)))
         }
         if (options.webSearch) {
             val search = JSONObject().put("type", "web_search_20250305").put("name", "web_search").put("max_uses", 2)

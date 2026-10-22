@@ -13,23 +13,30 @@ import com.mahasamuha.assistant.llm.ChatMessage.Role
 import com.mahasamuha.assistant.llm.ChatOptions
 import com.mahasamuha.assistant.llm.ToolCall
 import com.mahasamuha.assistant.skills.Skill
+import com.mahasamuha.assistant.tools.Confirmation
+import com.mahasamuha.assistant.tools.ConfirmationResult
 import com.mahasamuha.assistant.tools.ToolRegistry
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 
 data class PanelState(
     val phase: Phase = Phase.Starting,
     val heard: String = "",
     val reply: String = "",
     val error: String? = null,
+    /** An action waiting on the user: shown with Confirm/Cancel (ask) or just Cancel (announce). */
+    val confirming: Confirmation? = null,
 ) {
     enum class Phase { Starting, Listening, Thinking, Speaking, Idle }
 }
@@ -64,6 +71,9 @@ class VoiceSessionController(
     }
     private var turn: Job? = null
 
+    // Completed by a Confirm/Cancel tap while an action is being confirmed or announced.
+    private var tap: CompletableDeferred<Boolean>? = null
+
     /** Starts a new turn, interrupting any speech or turn in progress. */
     fun listen() = startTurn(followUp = false)
 
@@ -71,6 +81,11 @@ class VoiceSessionController(
         turn?.cancel()
         speaker.stop()
         turn = scope.launch { runTurn(followUp) }
+    }
+
+    /** A tap on the panel's Confirm (true) or Cancel (false) button. */
+    fun answer(confirmed: Boolean) {
+        tap?.complete(confirmed)
     }
 
     fun stop() {
@@ -179,10 +194,62 @@ class VoiceSessionController(
             history += ChatMessage(Role.ASSISTANT, text.toString().ifEmpty { null }, toolCalls = calls)
             if (calls.isEmpty()) return spoken.toString().trim()
 
-            _state.update { it.copy(phase = PanelState.Phase.Thinking) }
-            for (call in calls) history += ChatMessage(Role.TOOL, tools.execute(call), toolCallId = call.id)
+            for (call in calls) {
+                _state.update { it.copy(phase = PanelState.Phase.Thinking) }
+                history += ChatMessage(Role.TOOL, tools.execute(call, ::confirm), toolCallId = call.id)
+            }
         }
         throw IllegalStateException("No answer after $MAX_ROUNDS model rounds")
+    }
+
+    /**
+     * Gets an action confirmed (plan §4b): voice or tap, whichever comes first. A tap cuts off the
+     * prompt; an announcement goes ahead once it has been spoken in full.
+     */
+    private suspend fun confirm(confirmation: Confirmation): ConfirmationResult {
+        val tapped = CompletableDeferred<Boolean>()
+        tap = tapped
+        _state.update { it.copy(confirming = confirmation) }
+        val result = try {
+            coroutineScope {
+                val spoken = async {
+                    speakSentence(confirmation.text)
+                    speaker.awaitIdle()
+                    when (confirmation) {
+                        is Confirmation.Ask -> hearConfirmation()
+                        is Confirmation.Announce -> ConfirmationResult.Confirmed
+                    }
+                }
+                select {
+                    spoken.onAwait { it }
+                    tapped.onAwait { confirmed ->
+                        spoken.cancel()
+                        speaker.stop()
+                        if (confirmed) ConfirmationResult.Confirmed else ConfirmationResult.Declined(null)
+                    }
+                }
+            }
+        } finally {
+            tap = null
+            _state.update { it.copy(confirming = null) }
+        }
+        Log.i(TAG, "Confirmation \"${confirmation.text}\" -> $result")
+        // v1 acts only while unlocked (plan §2); the phone may have locked while waiting.
+        if (result == ConfirmationResult.Confirmed && keyguard.isDeviceLocked) {
+            throw IllegalStateException("The phone locked, so the action was not performed")
+        }
+        return result
+    }
+
+    private suspend fun hearConfirmation(): ConfirmationResult {
+        val reply = try {
+            hear()
+        } catch (e: SttException) {
+            if (!e.noSpeech) throw e
+            ""
+        }
+        return if (ConfirmationReply.isYes(reply)) ConfirmationResult.Confirmed
+        else ConfirmationResult.Declined(reply.ifBlank { null })
     }
 
     private suspend fun speakSentence(sentence: String) {
@@ -191,8 +258,8 @@ class VoiceSessionController(
     }
 
     private companion object {
-        /** Model calls per turn: enough for a tool call, its answer, and one more lookup. */
-        const val MAX_ROUNDS = 3
+        /** Model calls per turn: enough for a contact lookup, a text, a revised text, and the answer. */
+        const val MAX_ROUNDS = 5
     }
 
     private fun userMessage(e: Exception): String = when (e) {

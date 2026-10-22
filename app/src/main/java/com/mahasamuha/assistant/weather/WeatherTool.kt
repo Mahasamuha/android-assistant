@@ -1,7 +1,8 @@
 package com.mahasamuha.assistant.weather
 
+import com.mahasamuha.assistant.llm.ToolAnnotations
 import com.mahasamuha.assistant.llm.ToolDefinition
-import com.mahasamuha.assistant.tools.Tool
+import com.mahasamuha.assistant.tools.ReadOnlyTool
 import com.mahasamuha.assistant.voice.LocationSource
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -14,18 +15,19 @@ import org.json.JSONObject
  * `get_weather`: live conditions and forecast for the user's location or a named place. To change
  * provider, replace this tool (e.g. with a remote `get_weather`, plan §4b) rather than the forecast source.
  */
-class WeatherTool(private val provider: OpenMeteoWeather, private val locations: LocationSource) : Tool {
+class WeatherTool(private val provider: OpenMeteoWeather, private val locations: LocationSource) : ReadOnlyTool {
 
     override val definition = ToolDefinition(
         name = "get_weather",
         description = "Live current conditions, the next 48 hours, and a 3-day forecast. " +
             "Use this for every weather question instead of web search.",
-        parameters = JSONObject()
+        inputSchema = JSONObject()
             .put("type", "object")
             .put("properties", JSONObject().put("place", JSONObject()
                 .put("type", "string")
                 .put("description", "A city or place name. Omit it for the user's current location.")))
             .put("additionalProperties", false),
+        annotations = ToolAnnotations(title = "Weather", readOnlyHint = true, openWorldHint = true),
     )
 
     override suspend fun run(arguments: JSONObject): String {
