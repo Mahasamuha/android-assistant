@@ -11,6 +11,12 @@ import org.json.JSONObject
 /** Something the model can call. Runs on the phone; a [ReadOnlyTool] or an [ActionTool] (plan §4b). */
 sealed interface Tool {
     val definition: ToolDefinition
+
+    /**
+     * For local tools: whether a remote tool with the same name may replace this one (plan §4b). Off by
+     * default, so the remote one is dropped, even in a session where this tool's permission is off.
+     */
+    val allowRemote: Boolean get() = false
 }
 
 /** No side effects, so it runs without asking. Its definition must set `readOnlyHint`. */

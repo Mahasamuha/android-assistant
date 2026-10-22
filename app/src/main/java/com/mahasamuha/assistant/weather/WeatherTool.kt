@@ -21,6 +21,9 @@ import org.json.JSONObject
  */
 class WeatherTool(private val provider: OpenMeteoWeather, private val locations: LocationSource) : ReadOnlyTool {
 
+    // The server's Pirate Weather version replaces this one, which stays behind it as the fallback.
+    override val allowRemote = true
+
     override val definition = ToolDefinition(
         name = "get_weather",
         description = "Live weather for the user's location or a named place. Omit day for current conditions and " +
