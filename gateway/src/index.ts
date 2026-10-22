@@ -17,11 +17,7 @@ await bodyLog.init();
 
 // The only routes: GET /healthz and the inference routes below, each forwarded to the same path upstream.
 // Everything else is 404. Routes are added deliberately and recorded in docs/plan.md.
-const INFERENCE_ROUTES = new Set([
-  "/v1/responses",
-  // Kept until the app has moved to the Responses API; then removed.
-  "/v1/chat/completions",
-]);
+const INFERENCE_ROUTES = new Set(["/v1/responses"]);
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const requestId = randomUUID();
