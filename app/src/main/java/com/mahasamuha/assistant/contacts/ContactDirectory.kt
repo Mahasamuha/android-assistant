@@ -36,14 +36,20 @@ class ContactDirectory(private val resolver: ContentResolver, private val resour
         byContact.values.take(limit).map { (name, numbers) -> Contact(name, numbers.values.toList()) }
     }
 
-    /** The contact name and number label for [number], if it's in the contacts. */
-    suspend fun nameFor(number: String): Pair<String, String>? = withContext(Dispatchers.IO) {
+    /**
+     * Every contact saved with [number], with that number's label for each. Usually one; several when
+     * the same number is saved under more than one contact.
+     */
+    suspend fun namesFor(number: String): List<Pair<String, String>> = withContext(Dispatchers.IO) {
         val uri = Uri.withAppendedPath(PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number))
         val projection = arrayOf(PhoneLookup.DISPLAY_NAME, PhoneLookup.TYPE, PhoneLookup.LABEL)
+        val names = linkedMapOf<String, String>()
         resolver.query(uri, projection, null, null, null)?.use { cursor ->
-            if (!cursor.moveToFirst()) return@use null
-            val name = cursor.getString(0) ?: return@use null
-            name to Phone.getTypeLabel(resources, cursor.getInt(1), cursor.getString(2)).toString()
+            while (cursor.moveToNext()) {
+                val name = cursor.getString(0) ?: continue
+                names.putIfAbsent(name, Phone.getTypeLabel(resources, cursor.getInt(1), cursor.getString(2)).toString())
+            }
         }
+        names.toList()
     }
 }
