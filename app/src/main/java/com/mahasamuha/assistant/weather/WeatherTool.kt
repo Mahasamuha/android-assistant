@@ -19,7 +19,7 @@ class WeatherTool(private val provider: OpenMeteoWeather, private val locations:
 
     override val definition = ToolDefinition(
         name = "get_weather",
-        description = "Live current conditions, the next 48 hours, and a 3-day forecast. " +
+        description = "Live current conditions, the next 48 hours, and a 7-day forecast. " +
             "Use this for every weather question instead of web search.",
         inputSchema = JSONObject()
             .put("type", "object")

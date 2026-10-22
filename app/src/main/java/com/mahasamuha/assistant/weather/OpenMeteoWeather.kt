@@ -14,7 +14,7 @@ import org.json.JSONObject
 /** Open-Meteo (open-meteo.com): free for non-commercial use, no API key. */
 class OpenMeteoWeather {
 
-    /** Current conditions, the next 48 hours, and the next few days. */
+    /** Current conditions, the next 48 hours, and a 7-day daily forecast (today included). */
     suspend fun forecast(latitude: Double, longitude: Double, units: Units): Forecast = withContext(Dispatchers.IO) {
         val json = JSONObject(get(url(latitude, longitude, units)))
         val currentJson = json.getJSONObject("current")
@@ -70,7 +70,7 @@ class OpenMeteoWeather {
             "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m" +
             "&hourly=temperature_2m,precipitation_probability,weather_code" +
             "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
-            "&timezone=auto&forecast_days=3$unitParams"
+            "&timezone=auto&forecast_days=7$unitParams"
     }
 
     private fun get(url: String): String {
