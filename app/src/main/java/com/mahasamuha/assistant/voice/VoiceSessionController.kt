@@ -287,7 +287,11 @@ class VoiceSessionController(
     private fun userMessage(e: Exception): String = when (e) {
         is UserFacingException -> e.message.orEmpty()
         is NotSignedInException -> "You're signed out. Open the assistant app to sign in."
-        is UserNotAuthenticatedException -> "Unlock your phone first."
+        // The screen can be unlocked while the Keystore still counts the phone as locked (e.g. woken
+        // within the lock grace period, no fingerprint or PIN), which keeps the token key closed.
+        is UserNotAuthenticatedException ->
+            if (keyguard.isDeviceLocked) "Unlock your phone first."
+            else "Lock your phone and unlock it with your fingerprint or PIN, then try again."
         is ChatException.BudgetExceeded -> "The assistant's monthly budget is used up."
         is ChatException.RateLimited -> "That's too many requests. Try again in a moment."
         is ChatException.Unauthorized -> "The server didn't accept the sign-in. Open the assistant app and sign in again."
