@@ -32,3 +32,5 @@ Even with prompt rules against it, Haiku 5.5 with thinking off kept narrating it
 | Plain question | 1.1 s | 1.9 s |
 
 `low` produced no narration in any case and dropped the "Let me find…" preambles. It costs roughly 0.5–2 s before the first word on plain and search answers; tool-call turns are unchanged. `low` works within a 400-token cap (99 thinking tokens on a plain question); the cap is now 1000 for headroom. Switched the app to `low`.
+
+On the phone with `low` (2026-10-22): no narration in a session of weather, a call, two texts with corrections, and a search question. Turns with thinking took about 1–4 s to the first word, the search question 5.8 s; the user judged the delay normal for an assistant and kept `low`. One search answer ended with raw figures ("…about 360 points. 52,856.09 +360.21 (+0.69%)"), which would be read aloud; three replays of the same request gave clean sentences (one named its source, against the prompt). Watch for it before adding a speech-side filter.
