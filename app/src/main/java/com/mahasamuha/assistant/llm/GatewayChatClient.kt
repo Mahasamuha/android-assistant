@@ -2,6 +2,7 @@ package com.mahasamuha.assistant.llm
 
 import android.net.Uri
 import android.util.Log
+import com.mahasamuha.assistant.BuildConfig
 import com.mahasamuha.assistant.auth.AuthManager
 import com.mahasamuha.assistant.voice.TAG
 import java.io.IOException
@@ -34,6 +35,7 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
                 connection.requestMethod = "POST"
                 connection.connectTimeout = 10_000
                 connection.readTimeout = 60_000
+                connection.instanceFollowRedirects = false // the gateway never redirects; don't send the token elsewhere
                 connection.doOutput = true
                 connection.setRequestProperty("content-type", "application/json")
                 connection.setRequestProperty("accept", "text/event-stream")
@@ -42,8 +44,9 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
 
                 val status = connection.responseCode
                 if (status != HttpURLConnection.HTTP_OK) {
-                    val detail = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                    Log.w(TAG, "Gateway returned $status: ${detail.take(300)}")
+                    // Upstream error text can quote the request, so it's logged only in debug builds.
+                    val detail = if (BuildConfig.DEBUG) connection.errorStream?.bufferedReader()?.use { it.readText() }?.take(300) else null
+                    Log.w(TAG, "Gateway returned $status${detail?.let { ": $it" }.orEmpty()}")
                     close(errorFor(status))
                     return@launch
                 }

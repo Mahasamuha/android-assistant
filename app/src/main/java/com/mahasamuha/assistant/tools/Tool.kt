@@ -110,7 +110,7 @@ class ToolRegistry(tools: List<Tool>) {
                         is ConfirmationResult.Declined -> notConfirmed(result.userSaid)
                     }
                 }
-            }.also { Log.i(TAG, "Tool ${call.name}(${call.arguments}) -> ${it.take(300)}") }
+            }.also { Log.i(TAG, "Tool ${call.name} -> ${outcome(it)}") }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -127,4 +127,11 @@ class ToolRegistry(tools: List<Tool>) {
         .toString()
 
     private fun error(message: String) = JSONObject().put("error", message).toString()
+
+    // Only the status or error for the log: arguments and results carry message text, numbers and contacts.
+    private fun outcome(result: String): String = try {
+        JSONObject(result).run { optString("status").ifEmpty { optString("error").ifEmpty { "ok" } } }
+    } catch (e: JSONException) {
+        "ok"
+    }
 }

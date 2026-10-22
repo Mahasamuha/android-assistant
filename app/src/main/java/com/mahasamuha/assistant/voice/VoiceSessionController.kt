@@ -222,6 +222,8 @@ class VoiceSessionController(
             var calls = emptyList<ToolCall>()
             var replay = emptyList<JSONObject>()
             var bubble: Int? = null // this round's reply bubble in the transcript
+            // v1 calls the LLM only while unlocked (plan §2); the phone may have locked during the last round.
+            if (keyguard.isDeviceLocked) throw UserFacingException("Unlock your phone first.")
             chat.stream(history.toList(), options).collect { event ->
                 when (event) {
                     is ChatEvent.Text -> {
@@ -304,7 +306,7 @@ class VoiceSessionController(
             // Nothing recognized: say so, or a "no" that wasn't heard looks like it was ignored.
             confirmation is Confirmation.Ask -> addNote("no reply heard · cancelled")
         }
-        Log.i(TAG, "Confirmation \"${confirmation.text}\" -> $result")
+        Log.i(TAG, "Confirmation ${confirmation::class.simpleName} -> ${result::class.simpleName}")
         // v1 acts only while unlocked (plan §2); the phone may have locked while waiting.
         if (result == ConfirmationResult.Confirmed && keyguard.isDeviceLocked) {
             throw IllegalStateException("The phone locked, so the action was not performed")

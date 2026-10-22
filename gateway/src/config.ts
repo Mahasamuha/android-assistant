@@ -26,8 +26,8 @@ export interface Config {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
     port: integer(env, "PORT", 8080),
-    issuerUrl: url(env, "ISSUER_URL"),
-    jwksUrl: env.JWKS_URL ? url(env, "JWKS_URL") : undefined,
+    issuerUrl: httpsUrl(env, "ISSUER_URL"),
+    jwksUrl: env.JWKS_URL ? httpsUrl(env, "JWKS_URL") : undefined,
     audience: required(env, "AUDIENCE"),
     upstreamUrl: url(env, "UPSTREAM_URL").replace(/\/+$/, ""),
     upstreamVirtualKey: required(env, "UPSTREAM_VIRTUAL_KEY"),
@@ -52,6 +52,13 @@ function required(env: NodeJS.ProcessEnv, name: string): string {
 function url(env: NodeJS.ProcessEnv, name: string): string {
   const value = required(env, name);
   if (!URL.canParse(value)) throw new ConfigError(`${name} is not a valid URL`);
+  return value;
+}
+
+/** Signing keys come from here, so plain http is refused. Upstream URLs stay http on the private network. */
+function httpsUrl(env: NodeJS.ProcessEnv, name: string): string {
+  const value = url(env, name);
+  if (new URL(value).protocol !== "https:") throw new ConfigError(`${name} must be an https URL`);
   return value;
 }
 

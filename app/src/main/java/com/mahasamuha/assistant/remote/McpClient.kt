@@ -64,6 +64,7 @@ class McpClient(private val gateways: List<Uri>, private val auth: AuthManager) 
                 connection.requestMethod = "POST"
                 connection.connectTimeout = 10_000
                 connection.readTimeout = 30_000
+                connection.instanceFollowRedirects = false // the gateway never redirects; don't send the token elsewhere
                 connection.doOutput = true
                 connection.setRequestProperty("content-type", "application/json")
                 connection.setRequestProperty("accept", "application/json, text/event-stream")

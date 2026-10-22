@@ -46,7 +46,7 @@ class PlatformLocationSource(context: Context) : LocationSource {
         if (appContext.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) return null
         val location = recentLocation() ?: withTimeoutOrNull(3_000) { freshLocation() } ?: return null
         val address = withTimeoutOrNull(3_000) { geocode { listener -> geocoder().getFromLocation(location.latitude, location.longitude, 1, listener) } }
-        return approximate(address, location.latitude, location.longitude).also { Log.i(TAG, "Location: ${it.description}") }
+        return approximate(address, location.latitude, location.longitude)
     }
 
     override suspend fun find(name: String): ApproximateLocation? {

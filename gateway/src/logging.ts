@@ -44,7 +44,9 @@ export class BodyLog {
     private readonly debug: DebugSwitch,
     private readonly debugDurationMs: number,
   ) {
-    setInterval(() => void this.prune(), 60 * 60_000).unref();
+    setInterval(() => {
+      this.prune().catch((error: unknown) => log("prune_failed", { error: String(error) }));
+    }, 60 * 60_000).unref();
   }
 
   get enabled(): boolean {
@@ -68,7 +70,9 @@ export class BodyLog {
     for (const name of await readdir(this.dir)) {
       if (!/^bodies-.*\.jsonl$/.test(name)) continue;
       const file = path.join(this.dir, name);
-      if ((await stat(file)).mtimeMs < cutoff) await rm(file);
+      // force: a file removed since readdir is already gone, not an error.
+      const info = await stat(file).catch(() => undefined);
+      if (info && info.mtimeMs < cutoff) await rm(file, { force: true });
     }
   }
 }

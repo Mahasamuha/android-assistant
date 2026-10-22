@@ -13,10 +13,15 @@ data class AppConfig(
 ) {
     companion object {
         fun fromBuildConfig() = AppConfig(
-            issuer = BuildConfig.ISSUER_URL.toUri(),
+            issuer = https(BuildConfig.ISSUER_URL),
             clientId = BuildConfig.CLIENT_ID,
-            gatewayUrls = BuildConfig.GATEWAY_URLS.split(",").map { it.trim().trimEnd('/').toUri() },
+            gatewayUrls = BuildConfig.GATEWAY_URLS.split(",").map { https(it.trim().trimEnd('/')) },
             redirectUri = "${BuildConfig.APPLICATION_ID}:/oauth2redirect".toUri(),
         )
+
+        /** Tokens travel to these URLs, so a typo'd http:// fails here instead of at the first request. */
+        private fun https(url: String): Uri = url.toUri().also {
+            require(it.scheme == "https") { "Not an https URL: $url" }
+        }
     }
 }

@@ -30,7 +30,8 @@ const ROUTES: Record<string, () => Upstream | undefined> = {
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const requestId = randomUUID();
   const startedAt = performance.now();
-  const { pathname } = new URL(req.url ?? "/", "http://gateway");
+  // Matched on the raw request target, not a parsed URL: `new URL` reads `//x/v1/responses` as `/v1/responses`.
+  const pathname = (req.url ?? "/").split("?", 1)[0] ?? "/";
 
   if (req.method === "GET" && pathname === "/healthz") {
     sendJson(res, 200, { status: "ok" });
