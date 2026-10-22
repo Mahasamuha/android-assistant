@@ -23,15 +23,18 @@ class SttException(val code: Int) : Exception("Speech recognition error $code") 
     val noSpeech get() = code == SpeechRecognizer.ERROR_NO_MATCH || code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
 }
 
-/** One utterance per [listen]: partial results, then a single [SttEvent.Final], then completion. */
+/**
+ * One utterance per [listen]: partial results, then a single [SttEvent.Final], then completion.
+ * [expected] are words or phrases to favor (e.g. yes/no while confirming); implementations may ignore it.
+ */
 interface SpeechToText {
-    fun listen(): Flow<SttEvent>
+    fun listen(expected: List<String> = emptyList()): Flow<SttEvent>
 }
 
 /** The platform's on-device recognizer. Must be driven from the main thread. */
 class PlatformSpeechToText(private val context: Context) : SpeechToText {
 
-    override fun listen(): Flow<SttEvent> = callbackFlow {
+    override fun listen(expected: List<String>): Flow<SttEvent> = callbackFlow {
         val onDevice = SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
         Log.i(TAG, "STT: on-device available=$onDevice")
         val recognizer = if (onDevice) SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
@@ -67,7 +70,11 @@ class PlatformSpeechToText(private val context: Context) : SpeechToText {
             Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-                .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true),
+                .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                .apply {
+                    // Biasing helps short answers like a lone "no", which otherwise often come back as no match.
+                    if (expected.isNotEmpty()) putStringArrayListExtra(RecognizerIntent.EXTRA_BIASING_STRINGS, ArrayList(expected))
+                },
         )
 
         awaitClose {

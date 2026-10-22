@@ -13,6 +13,9 @@ object ConfirmationReply {
     // A leading yes before another yes phrase ("yes send it") is still a yes.
     private val PREFIXES = listOf("yes ", "yeah ", "ok ", "okay ", "sure ")
 
+    /** Words to favor in speech recognition while waiting for a confirmation. */
+    val EXPECTED: List<String> = YES.toList() + listOf("no", "nope", "cancel", "stop", "don't", "wait")
+
     fun isYes(reply: String): Boolean {
         var text = reply.lowercase().replace(Regex("[^a-z ]"), "").replace(Regex("\\s+"), " ").trim()
         text = text.removeSuffix(" please").trim()

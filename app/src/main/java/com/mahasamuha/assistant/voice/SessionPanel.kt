@@ -133,7 +133,13 @@ private fun Transcript(state: PanelState, modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        items(state.transcript) { message -> Bubble(message.text, message.fromUser) }
+        items(state.transcript) { message ->
+            if (message.note) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { MonoLabel(message.text) }
+            } else {
+                Bubble(message.text, message.fromUser)
+            }
+        }
         if (state.hearing.isNotEmpty()) {
             item { Bubble(state.hearing, fromUser = true, modifier = Modifier.alpha(0.6f)) }
         }

@@ -43,7 +43,8 @@ data class PanelState(
     enum class Phase { Starting, Listening, Thinking, Speaking, Idle }
 }
 
-data class PanelMessage(val fromUser: Boolean, val text: String)
+/** A chat bubble, or with [note] a small label between bubbles (e.g. "no reply heard"). */
+data class PanelMessage(val fromUser: Boolean, val text: String, val note: Boolean = false)
 
 /** A problem the user can act on; the message is spoken as is. */
 private class UserFacingException(message: String) : Exception(message)
@@ -156,10 +157,10 @@ class VoiceSessionController(
         if (!hasMicPermission()) throw UserFacingException("I need microphone access. Open the assistant app to allow it.")
     }
 
-    private suspend fun hear(): String {
+    private suspend fun hear(expected: List<String> = emptyList()): String {
         _state.update { it.copy(phase = PanelState.Phase.Listening) }
         var final = ""
-        stt.listen().collect { event ->
+        stt.listen(expected).collect { event ->
             when (event) {
                 is SttEvent.Partial -> _state.update { it.copy(hearing = event.text) }
                 is SttEvent.Final -> {
@@ -249,7 +250,11 @@ class VoiceSessionController(
             _state.update { it.copy(confirming = null, hearing = "") }
         }
         addMessage(fromUser = false, confirmation.text)
-        userReply?.let { addMessage(fromUser = true, it) }
+        when {
+            userReply != null -> addMessage(fromUser = true, userReply)
+            // Nothing recognized: say so, or a "no" that wasn't heard looks like it was ignored.
+            confirmation is Confirmation.Ask -> addNote("no reply heard · cancelled")
+        }
         Log.i(TAG, "Confirmation \"${confirmation.text}\" -> $result")
         // v1 acts only while unlocked (plan §2); the phone may have locked while waiting.
         if (result == ConfirmationResult.Confirmed && keyguard.isDeviceLocked) {
@@ -260,7 +265,7 @@ class VoiceSessionController(
 
     private suspend fun hearConfirmation(): Pair<ConfirmationResult, String?> {
         val reply = try {
-            hear()
+            hear(ConfirmationReply.EXPECTED)
         } catch (e: SttException) {
             if (!e.noSpeech) throw e
             ""
@@ -273,6 +278,10 @@ class VoiceSessionController(
     /** Adds a bubble and clears the in-progress words. */
     private fun addMessage(fromUser: Boolean, text: String) {
         _state.update { it.copy(transcript = it.transcript + PanelMessage(fromUser, text), hearing = "") }
+    }
+
+    private fun addNote(text: String) {
+        _state.update { it.copy(transcript = it.transcript + PanelMessage(fromUser = false, text, note = true), hearing = "") }
     }
 
     /** Updates the bubble that is still streaming. */
