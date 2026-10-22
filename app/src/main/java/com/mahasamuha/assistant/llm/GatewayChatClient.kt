@@ -47,21 +47,25 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
                     close(errorFor(status))
                     return@launch
                 }
-                var output: JSONArray? = null
+                // Items are collected as each one finishes: in a streamed search, the LLM gateway's final
+                // response.completed omits the web_search_call items (docs/phase3-notes.md).
+                val items = mutableListOf<JSONObject>()
+                var completed = false
                 connection.inputStream.bufferedReader().useLines { lines ->
                     for (line in lines) {
                         if (!line.startsWith("data:")) continue
                         val event = event(line.removePrefix("data:").trim()) ?: continue
                         when (event.optString("type")) {
                             "response.output_text.delta" -> event.optString("delta").takeIf { it.isNotEmpty() }?.let { send(ChatEvent.Text(it)) }
+                            "response.output_item.done" -> event.optJSONObject("item")?.let(items::add)
                             // Incomplete means a limit was hit (e.g. max tokens): keep what arrived.
-                            "response.completed", "response.incomplete" -> output = event.optJSONObject("response")?.optJSONArray("output")
+                            "response.completed", "response.incomplete" -> completed = true
                             "response.failed", "error" -> throw ChatException.Unavailable("Response failed: ${event.toString().take(300)}")
                         }
                     }
                 }
-                val items = output ?: throw ChatException.Unavailable("Stream ended without a completed response")
-                val kept = (0 until items.length()).map { items.getJSONObject(it) }
+                if (!completed) throw ChatException.Unavailable("Stream ended without a completed response")
+                val kept = items
                     // Thinking can't be sent back through the LLM gateway (its signatures are lost), and
                     // earlier turns don't need it.
                     .filter { it.optString("type") != "reasoning" }
