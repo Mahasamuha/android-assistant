@@ -4,28 +4,44 @@ import com.mahasamuha.assistant.llm.ToolAnnotations
 import com.mahasamuha.assistant.llm.ToolDefinition
 import com.mahasamuha.assistant.tools.ReadOnlyTool
 import com.mahasamuha.assistant.voice.LocationSource
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle
+import java.time.format.DateTimeParseException
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.math.roundToInt
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * `get_weather`: live conditions and forecast for the user's location or a named place. To change
- * provider, replace this tool (e.g. with a remote `get_weather`, plan §4b) rather than the forecast source.
+ * `get_weather`: live weather for the user's location or a named place, for the time the model asks
+ * about: now (the rest of today and tonight), one date, or a range of dates. The model picks the dates,
+ * so the result holds only what the answer needs. To change provider, replace this tool (e.g. with a
+ * remote `get_weather`, plan §4b) rather than the forecast source.
  */
 class WeatherTool(private val provider: OpenMeteoWeather, private val locations: LocationSource) : ReadOnlyTool {
 
     override val definition = ToolDefinition(
         name = "get_weather",
-        description = "Live current conditions, the next 48 hours, and a 7-day forecast. " +
-            "Use this for every weather question instead of web search.",
+        description = "Live weather for the user's location or a named place. Omit day for current conditions and " +
+            "the rest of today and tonight. Pass day for one date: its high, low, and hour-by-hour forecast. Pass day " +
+            "and end_day for a range, such as a weekend: a summary per day. Forecasts reach " +
+            "${OpenMeteoWeather.MAX_DAYS - 1} days ahead. Use this for every weather question instead of web search.",
         inputSchema = JSONObject()
             .put("type", "object")
-            .put("properties", JSONObject().put("place", JSONObject()
-                .put("type", "string")
-                .put("description", "A city or place name. Omit it for the user's current location.")))
+            .put("properties", JSONObject()
+                .put("place", JSONObject()
+                    .put("type", "string")
+                    .put("description", "A city or place name. Omit it for the user's current location."))
+                .put("day", JSONObject()
+                    .put("type", "string")
+                    .put("format", "date")
+                    .put("description", "The date asked about, as YYYY-MM-DD, worked out from the current date. " +
+                        "Omit it for now, today, or tonight."))
+                .put("end_day", JSONObject()
+                    .put("type", "string")
+                    .put("format", "date")
+                    .put("description", "The last date of a range, as YYYY-MM-DD, with day as the first.")))
             .put("additionalProperties", false),
         annotations = ToolAnnotations(title = "Weather", readOnlyHint = true, openWorldHint = true),
     )
@@ -37,46 +53,91 @@ class WeatherTool(private val provider: OpenMeteoWeather, private val locations:
         } else {
             locations.current() ?: throw IllegalStateException("The user's location isn't available; ask which city")
         }
-        val forecast = provider.forecast(place.latitude, place.longitude, unitsForLocale())
-        return toJson(place.description ?: placeName, forecast).toString()
+        val day = date(arguments, "day")
+        val endDay = date(arguments, "end_day")?.takeIf { it != day }
+        require(endDay == null || day != null) { "end_day needs day as the start of the range" }
+        require(endDay == null || endDay.isAfter(day)) { "end_day must come after day" }
+
+        // Fetch only as far as the request reaches; "now" needs tomorrow morning too, for tonight's hours. The
+        // phone's date stands in for the place's here (one extra day covers time zones); checked below.
+        val last = endDay ?: day ?: LocalDate.now().plusDays(1)
+        val days = ChronoUnit.DAYS.between(LocalDate.now(), last).toInt() + 2
+        val forecast = provider.forecast(place.latitude, place.longitude, unitsForLocale(), days)
+
+        val today = forecast.now.toLocalDate()
+        if (day != null) require(!day.isBefore(today)) { "Only forecasts are available, not past weather" }
+        (endDay ?: day)?.let { requested ->
+            val furthest = forecast.days.last().date
+            require(!requested.isAfter(furthest)) { "The forecast only reaches ${dayLabel(furthest)}" }
+        }
+
+        val result = JSONObject().put("place", place.description ?: placeName)
+        val format = Format(forecast.units)
+        when {
+            day == null -> {
+                result.put("now", format.current(forecast.current))
+                forecast.days.firstOrNull { it.date == today }?.let { result.put("today", format.day(it)) }
+                // The rest of today and tonight, until 6 AM tomorrow.
+                val until = today.plusDays(1).atTime(6, 0)
+                result.put("hours", format.hours(forecast.hours.filter { !it.time.isAfter(until) }, withDay = true))
+            }
+            endDay == null -> {
+                forecast.days.firstOrNull { it.date == day }?.let { result.put("day", format.day(it)) }
+                result.put("hours", format.hours(forecast.hours.filter { it.time.toLocalDate() == day }, withDay = false))
+            }
+            else -> result.put("days", JSONArray().apply {
+                forecast.days.filter { !it.date.isBefore(day) && !it.date.isAfter(endDay) }.forEach { put(format.day(it)) }
+            })
+        }
+        return result.toString()
+    }
+
+    private fun date(arguments: JSONObject, key: String): LocalDate? {
+        val value = arguments.optString(key).trim().takeIf { it.isNotEmpty() } ?: return null
+        return try {
+            LocalDate.parse(value)
+        } catch (e: DateTimeParseException) {
+            throw IllegalArgumentException("$key must be a date like 2026-10-24")
+        }
     }
 
     /** Compact, already-rounded values with spoken-friendly times, so the model doesn't need to compute anything. */
-    private fun toJson(place: String, forecast: Forecast): JSONObject {
-        val units = forecast.units
-        fun temp(value: Double) = "${value.roundToInt()}${units.temperature}"
-        val hourFormat = DateTimeFormatter.ofPattern("EEEE h a", Locale.US)
+    private class Format(private val units: Units) {
+        private fun temp(value: Double) = "${value.roundToInt()}${units.temperature}"
 
-        return JSONObject()
-            .put("place", place)
-            .put("current", JSONObject()
-                .put("temperature", temp(forecast.current.temperature))
-                .put("feels_like", temp(forecast.current.feelsLike))
-                .put("condition", forecast.current.condition)
-                .put("wind", "${forecast.current.windSpeed.roundToInt()} ${units.speed}")
-                .apply { forecast.current.humidity?.let { put("humidity", "$it%") } })
-            .put("next_hours", JSONArray().apply {
-                // Every third hour keeps the result short while still covering "tonight" through "tomorrow night".
-                forecast.hours.filterIndexed { i, _ -> i % 3 == 0 }.forEach { hour ->
+        fun current(current: Forecast.Current): JSONObject = JSONObject()
+            .put("temperature", temp(current.temperature))
+            .put("feels_like", temp(current.feelsLike))
+            .put("condition", current.condition)
+            .put("wind", "${current.windSpeed.roundToInt()} ${units.speed}")
+            .apply { current.humidity?.let { put("humidity", "$it%") } }
+
+        fun day(day: Forecast.Day): JSONObject = JSONObject()
+            .put("date", dayLabel(day.date))
+            .put("high", temp(day.high))
+            .put("low", temp(day.low))
+            .put("condition", day.condition)
+            .apply { day.precipitationChance?.let { put("precipitation_chance", "$it%") } }
+
+        // Every third hour keeps the result short and still covers morning, afternoon, evening, and night.
+        fun hours(hours: List<Forecast.Hour>, withDay: Boolean): JSONArray {
+            val format = DateTimeFormatter.ofPattern(if (withDay) "EEEE h a" else "h a", Locale.US)
+            return JSONArray().apply {
+                hours.filter { it.time.hour % 3 == 0 }.forEach { hour ->
                     put(JSONObject()
-                        .put("time", hour.time.format(hourFormat))
+                        .put("time", hour.time.format(format))
                         .put("temperature", temp(hour.temperature))
                         .put("condition", hour.condition)
                         .apply { hour.precipitationChance?.let { put("precipitation_chance", "$it%") } })
                 }
-            })
-            .put("days", JSONArray().apply {
-                forecast.days.forEach { day ->
-                    put(JSONObject()
-                        .put("day", day.date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.US))
-                        .put("high", temp(day.high))
-                        .put("low", temp(day.low))
-                        .put("condition", day.condition)
-                        .apply { day.precipitationChance?.let { put("precipitation_chance", "$it%") } })
-                }
-            })
+            }
+        }
     }
 
     private fun unitsForLocale(): Units =
         if (Locale.getDefault().country in setOf("US", "LR", "MM")) Units.IMPERIAL else Units.METRIC
+
+    private companion object {
+        fun dayLabel(date: LocalDate): String = date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.US))
+    }
 }

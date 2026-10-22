@@ -8,9 +8,10 @@ enum class Units(val temperature: String, val speed: String) {
     METRIC("°C", "km/h"),
 }
 
-/** Provider-neutral forecast. Times are local to the forecast location. */
+/** Provider-neutral forecast. Times are local to the forecast location; [now] is its current local time. */
 data class Forecast(
     val units: Units,
+    val now: LocalDateTime,
     val current: Current,
     val hours: List<Hour>,
     val days: List<Day>,

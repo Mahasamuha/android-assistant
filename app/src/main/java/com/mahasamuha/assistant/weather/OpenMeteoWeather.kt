@@ -14,9 +14,9 @@ import org.json.JSONObject
 /** Open-Meteo (open-meteo.com): free for non-commercial use, no API key. */
 class OpenMeteoWeather {
 
-    /** Current conditions, the next 48 hours, and a 7-day daily forecast (today included). */
-    suspend fun forecast(latitude: Double, longitude: Double, units: Units): Forecast = withContext(Dispatchers.IO) {
-        val json = JSONObject(get(url(latitude, longitude, units)))
+    /** Current conditions, and hourly and daily forecasts for [days] days starting today (1–16). */
+    suspend fun forecast(latitude: Double, longitude: Double, units: Units, days: Int): Forecast = withContext(Dispatchers.IO) {
+        val json = JSONObject(get(url(latitude, longitude, units, days.coerceIn(1, MAX_DAYS))))
         val currentJson = json.getJSONObject("current")
         val now = LocalDateTime.parse(currentJson.getString("time"))
 
@@ -25,7 +25,6 @@ class OpenMeteoWeather {
         val hours = (0 until hourTimes.length())
             .map { i -> i to LocalDateTime.parse(hourTimes.getString(i)) }
             .filter { (_, time) -> time.isAfter(now) }
-            .take(48)
             .map { (i, time) ->
                 Forecast.Hour(
                     time = time,
@@ -49,6 +48,7 @@ class OpenMeteoWeather {
 
         Forecast(
             units = units,
+            now = now,
             current = Forecast.Current(
                 temperature = currentJson.getDouble("temperature_2m"),
                 feelsLike = currentJson.getDouble("apparent_temperature"),
@@ -61,7 +61,7 @@ class OpenMeteoWeather {
         )
     }
 
-    private fun url(latitude: Double, longitude: Double, units: Units): String {
+    private fun url(latitude: Double, longitude: Double, units: Units, days: Int): String {
         val unitParams = when (units) {
             Units.IMPERIAL -> "&temperature_unit=fahrenheit&wind_speed_unit=mph"
             Units.METRIC -> "&temperature_unit=celsius&wind_speed_unit=kmh"
@@ -70,7 +70,7 @@ class OpenMeteoWeather {
             "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m" +
             "&hourly=temperature_2m,precipitation_probability,weather_code" +
             "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
-            "&timezone=auto&forecast_days=7$unitParams"
+            "&timezone=auto&forecast_days=$days$unitParams"
     }
 
     private fun get(url: String): String {
@@ -84,6 +84,11 @@ class OpenMeteoWeather {
         } finally {
             connection.disconnect()
         }
+    }
+
+    companion object {
+        /** The furthest Open-Meteo forecasts, in days including today. */
+        const val MAX_DAYS = 16
     }
 
     private fun JSONArray.optIntOrNull(index: Int): Int? = if (isNull(index)) null else optInt(index)
