@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
+import org.json.JSONObject
 
 data class PanelState(
     val phase: Phase = Phase.Starting,
@@ -184,6 +185,7 @@ class VoiceSessionController(
             val splitter = SentenceSplitter()
             val text = StringBuilder()
             var calls = emptyList<ToolCall>()
+            var replay = emptyList<JSONObject>()
             chat.stream(history.toList(), options).collect { event ->
                 when (event) {
                     is ChatEvent.Text -> {
@@ -201,12 +203,13 @@ class VoiceSessionController(
                         for (sentence in splitter.add(event.delta)) speakSentence(sentence)
                     }
                     is ChatEvent.ToolCalls -> calls = event.calls
+                    is ChatEvent.Finished -> replay = event.replay
                 }
             }
             splitter.flush()?.let { speakSentence(it) }
             spoken.append(text).append(' ')
 
-            history += ChatMessage(Role.ASSISTANT, text.toString().ifEmpty { null }, toolCalls = calls)
+            history += ChatMessage(Role.ASSISTANT, text.toString().ifEmpty { null }, toolCalls = calls, replay = replay)
             if (calls.isEmpty()) return spoken.toString().trim()
 
             for (call in calls) {

@@ -7,7 +7,7 @@ export interface Config {
   /** If unset, discovered from the issuer's OpenID configuration. */
   jwksUrl: string | undefined;
   audience: string;
-  /** Base URL of the LLM gateway; `/v1/chat/completions` is appended. */
+  /** Base URL of the LLM gateway; the allowlisted inference path (e.g. `/v1/responses`) is appended. */
   upstreamUrl: string;
   upstreamVirtualKey: string;
   rateLimit: {

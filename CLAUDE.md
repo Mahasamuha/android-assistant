@@ -18,13 +18,13 @@ These are independent build units. Don't introduce a monorepo tool unless one is
 
 ## Architecture in one paragraph
 
-The phone holds the default assistant role (`VoiceInteractionService`). A gesture opens a session panel. The phone does on-device STT, then sends an OpenAI-compatible chat-completions request with an Authentik-issued bearer token to the public auth gateway. The gateway validates the JWT (JWKS signature, iss, aud, exp), rate-limits, attaches the phone's Bifrost virtual key, and streams the request to Bifrost. Bifrost is on a private network only; it enforces budget and model allowlist and talks to Anthropic. Tool calls come back to the phone and run there: contacts lookup, calls, SMS. The answer is spoken with on-device TTS.
+The phone holds the default assistant role (`VoiceInteractionService`). A gesture opens a session panel. The phone does on-device STT, then sends an OpenAI Responses API request with an Authentik-issued bearer token to the public auth gateway. The gateway validates the JWT (JWKS signature, iss, aud, exp), rate-limits, attaches the phone's Bifrost virtual key, and streams the request to Bifrost. Bifrost is on a private network only; it enforces budget and model allowlist and talks to Anthropic. Tool calls come back to the phone and run there: contacts lookup, calls, SMS. The answer is spoken with on-device TTS.
 
 ## Non-negotiables
 
 - No provider API keys or Bifrost keys on the phone. The app holds only issuer URL, client ID, and gateway base URL(s).
 - Bifrost is never internet-reachable. Only the auth gateway is exposed.
-- The gateway keeps its public surface minimal: an explicit allowlist of routes, each added deliberately and recorded in the plan, all requiring a valid token except the health check. Everything else returns 404. Today the allowlist is `POST /v1/chat/completions` and `GET /healthz`.
+- The gateway keeps its public surface minimal: an explicit allowlist of routes, each added deliberately and recorded in the plan, all requiring a valid token except the health check. Everything else returns 404. Today the allowlist is `POST /v1/responses` and `GET /healthz` (`POST /v1/chat/completions` stays only until the Responses switch is tested on the phone).
 - The gateway streams responses through without buffering (SSE pass-through) and forwards only `content-type` from upstream. Bifrost must keep `extra_fields_placement: "headers"`, or its response bodies leak provider account IDs (`docs/phase2-notes.md`).
 - Side effects follow the confirmation policy in plan §2: SMS always confirmed; calls announced, and confirmed only when the contact match is ambiguous.
 - STT, TTS, and the LLM endpoint each sit behind an interface so implementations can be swapped.

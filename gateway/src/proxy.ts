@@ -9,11 +9,13 @@ import { log } from "./logging.js";
 export const CLIENT_CLOSED = 499;
 
 /**
- * Forwards a chat-completions request with the gateway's virtual key and streams the response back
- * byte for byte. Only content-type is forwarded from upstream: the LLM gateway's own headers stay here.
+ * Forwards an inference request (an allowlisted path) to the same path upstream with the gateway's virtual
+ * key, and streams the response back byte for byte. Only content-type is forwarded from upstream: the LLM
+ * gateway's own headers stay here.
  */
-export async function forwardChatCompletion(
+export async function forwardInference(
   config: Config,
+  path: string,
   requestId: string,
   body: Buffer<ArrayBuffer>,
   res: ServerResponse,
@@ -27,7 +29,7 @@ export async function forwardChatCompletion(
   try {
     let upstream: Response;
     try {
-      upstream = await fetch(`${config.upstreamUrl}/v1/chat/completions`, {
+      upstream = await fetch(`${config.upstreamUrl}${path}`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${config.upstreamVirtualKey}` },
         body,

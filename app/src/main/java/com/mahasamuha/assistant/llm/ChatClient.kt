@@ -12,6 +12,11 @@ data class ChatMessage(
     val content: String?,
     val toolCalls: List<ToolCall> = emptyList(),
     val toolCallId: String? = null,
+    /**
+     * For assistant entries: the response exactly as the endpoint returned it (e.g. its web searches with
+     * their results), sent back verbatim so follow-ups can see them. Opaque outside the client that made it.
+     */
+    val replay: List<JSONObject> = emptyList(),
 ) {
     enum class Role(val wire: String) { SYSTEM("system"), USER("user"), ASSISTANT("assistant"), TOOL("tool") }
 }
@@ -58,6 +63,9 @@ sealed interface ChatEvent {
 
     /** Emitted once, at the end of a response that asks for tools. */
     data class ToolCalls(val calls: List<ToolCall>) : ChatEvent
+
+    /** Emitted last: what to keep in [ChatMessage.replay] for this response. */
+    data class Finished(val replay: List<JSONObject>) : ChatEvent
 }
 
 /** The LLM endpoint. Implementations stream events and fail with [ChatException]. */

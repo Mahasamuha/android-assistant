@@ -57,9 +57,9 @@ Proxy host in Nginx Proxy Manager:
 | SSL | Request a certificate; Force SSL on; HTTP/2 on |
 | Advanced | Nothing needed. The gateway sends `X-Accel-Buffering: no` on streams so nginx doesn't buffer them, and nginx's defaults (60 s read timeout, 1 MB body limit) fit. |
 
-Forwarding every path is fine: the gateway returns 404 for anything but `POST /v1/chat/completions` and `GET /healthz`. Per-IP rate limiting, if wanted, belongs at the proxy; the gateway limits per token subject.
+Forwarding every path is fine: the gateway returns 404 for anything but its route allowlist (`POST /v1/responses`, `GET /healthz`; plan §2). Per-IP rate limiting, if wanted, belongs at the proxy; the gateway limits per token subject.
 
-Check it from outside once it's up: `curl https://<gateway-host>/healthz` returns `{"status":"ok"}`, and `curl -X POST https://<gateway-host>/v1/chat/completions` returns 401.
+Check it from outside once it's up: `curl https://<gateway-host>/healthz` returns `{"status":"ok"}`, and `curl -X POST https://<gateway-host>/v1/responses` returns 401.
 
 ## Operations
 

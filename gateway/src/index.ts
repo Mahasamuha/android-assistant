@@ -5,7 +5,7 @@ import { ResponseCapture } from "./capture.js";
 import { loadConfig } from "./config.js";
 import { HttpError } from "./errors.js";
 import { BodyLog, DebugSwitch, log } from "./logging.js";
-import { forwardChatCompletion } from "./proxy.js";
+import { forwardInference } from "./proxy.js";
 import { RateLimiter } from "./rateLimit.js";
 
 const config = loadConfig();
@@ -15,7 +15,14 @@ const debug = new DebugSwitch(config.debugDurationMs);
 const bodyLog = new BodyLog(config.logDir, config.logBodyRetentionMs, debug, config.debugDurationMs);
 await bodyLog.init();
 
-// The only routes: POST /v1/chat/completions and GET /healthz. Everything else is 404.
+// The only routes: GET /healthz and the inference routes below, each forwarded to the same path upstream.
+// Everything else is 404. Routes are added deliberately and recorded in docs/plan.md.
+const INFERENCE_ROUTES = new Set([
+  "/v1/responses",
+  // Kept until the app has moved to the Responses API; then removed.
+  "/v1/chat/completions",
+]);
+
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const requestId = randomUUID();
   const startedAt = performance.now();
@@ -31,7 +38,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   let request: unknown;
   let capture: ResponseCapture | undefined;
   try {
-    if (req.method !== "POST" || pathname !== "/v1/chat/completions") throw new HttpError(404, "Not found");
+    if (req.method !== "POST" || !INFERENCE_ROUTES.has(pathname)) throw new HttpError(404, "Not found");
 
     subject = (await verifier.verify(req.headers.authorization)).subject;
 
@@ -42,7 +49,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     request = parseJsonObject(body);
 
     if (bodyLog.enabled) capture = new ResponseCapture();
-    status = await forwardChatCompletion(config, requestId, body, res, capture);
+    status = await forwardInference(config, pathname, requestId, body, res, capture);
   } catch (e) {
     status = e instanceof HttpError ? e.status : 500;
     if (!(e instanceof HttpError)) log("unhandled_error", { requestId, error: e instanceof Error ? e.stack : String(e) });

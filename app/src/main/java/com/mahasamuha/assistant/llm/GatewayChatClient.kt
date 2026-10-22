@@ -17,15 +17,17 @@ import org.json.JSONException
 import org.json.JSONObject
 
 /**
- * OpenAI-compatible streaming chat completions through the auth gateway, with function tools. The web
- * search tool is Anthropic's server tool, which the LLM gateway passes through (docs/phase2-notes.md).
+ * The OpenAI Responses API (`/v1/responses`), streamed through the auth gateway, with function tools and
+ * Anthropic's web search server tool (passed through by the LLM gateway). Chosen over chat completions
+ * because its output is typed: searches arrive as items that can be sent back, so follow-ups see what was
+ * searched, and citations are annotations rather than text (docs/phase3-notes.md).
  */
 class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthManager) : ChatClient {
 
     override fun stream(messages: List<ChatMessage>, options: ChatOptions): Flow<ChatEvent> = callbackFlow {
         val token = auth.freshAccessToken()
         // v1 uses the first gateway; the list leaves room for a fallback.
-        val connection = URL("${gateways.first()}/v1/chat/completions").openConnection() as HttpURLConnection
+        val connection = URL("${gateways.first()}/v1/responses").openConnection() as HttpURLConnection
 
         launch(Dispatchers.IO) {
             try {
@@ -45,26 +47,31 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
                     close(errorFor(status))
                     return@launch
                 }
-                val toolCalls = ToolCallAccumulator()
-                var finishReason: String? = null
+                var output: JSONArray? = null
                 connection.inputStream.bufferedReader().useLines { lines ->
                     for (line in lines) {
                         if (!line.startsWith("data:")) continue
-                        val payload = line.removePrefix("data:").trim()
-                        if (payload == "[DONE]") break
-                        val choice = choice(payload) ?: continue
-                        choice.optString("finish_reason").takeIf { it.isNotEmpty() && it != "null" }?.let { finishReason = it }
-                        val delta = choice.optJSONObject("delta") ?: continue
-                        delta.takeUnless { it.isNull("content") }?.optString("content")
-                            ?.takeIf { it.isNotEmpty() }?.let { send(ChatEvent.Text(it)) }
-                        delta.optJSONArray("tool_calls")?.let(toolCalls::add)
+                        val event = event(line.removePrefix("data:").trim()) ?: continue
+                        when (event.optString("type")) {
+                            "response.output_text.delta" -> event.optString("delta").takeIf { it.isNotEmpty() }?.let { send(ChatEvent.Text(it)) }
+                            // Incomplete means a limit was hit (e.g. max tokens): keep what arrived.
+                            "response.completed", "response.incomplete" -> output = event.optJSONObject("response")?.optJSONArray("output")
+                            "response.failed", "error" -> throw ChatException.Unavailable("Response failed: ${event.toString().take(300)}")
+                        }
                     }
                 }
-                // Server-side web search also streams as a tool_calls entry, with no id or name, and has
-                // already run. Only a "tool_calls" finish means the phone has tools to run.
-                val calls = toolCalls.result().filter { it.id.isNotEmpty() && it.name.isNotEmpty() }
-                if (finishReason == "tool_calls" && calls.isNotEmpty()) send(ChatEvent.ToolCalls(calls))
+                val items = output ?: throw ChatException.Unavailable("Stream ended without a completed response")
+                val kept = (0 until items.length()).map { items.getJSONObject(it) }
+                    // Thinking can't be sent back through the LLM gateway (its signatures are lost), and
+                    // earlier turns don't need it.
+                    .filter { it.optString("type") != "reasoning" }
+                val calls = kept.filter { it.optString("type") == "function_call" }
+                    .map { ToolCall(it.getString("call_id"), it.getString("name"), it.optString("arguments")) }
+                if (calls.isNotEmpty()) send(ChatEvent.ToolCalls(calls))
+                send(ChatEvent.Finished(kept))
                 close()
+            } catch (e: ChatException) {
+                close(e)
             } catch (e: IOException) {
                 // Also how a cancelled collection ends: awaitClose disconnects, and the blocked read throws.
                 close(ChatException.Unavailable("Gateway connection failed", e))
@@ -77,16 +84,18 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
     private fun requestBody(messages: List<ChatMessage>, options: ChatOptions): JSONObject {
         val body = JSONObject()
             .put("model", options.model)
-            .put("max_tokens", options.maxTokens)
+            .put("max_output_tokens", options.maxTokens)
             .put("stream", true)
-            .put("reasoning_effort", options.reasoningEffort)
-            .put("messages", JSONArray().apply { messages.forEach { put(messageJson(it)) } })
+            .put("reasoning", JSONObject().put("effort", options.reasoningEffort))
+            .put("instructions", messages.filter { it.role == ChatMessage.Role.SYSTEM }.joinToString("\n\n") { it.content.orEmpty() })
+            .put("input", JSONArray().apply { messages.forEach { message -> inputItems(message).forEach(::put) } })
         val tools = JSONArray()
         options.tools.forEach { tool ->
-            tools.put(JSONObject().put("type", "function").put("function", JSONObject()
+            tools.put(JSONObject()
+                .put("type", "function")
                 .put("name", tool.name)
                 .put("description", tool.description)
-                .put("parameters", tool.inputSchema)))
+                .put("parameters", tool.inputSchema))
         }
         if (options.webSearch) {
             val search = JSONObject().put("type", "web_search_20250305").put("name", "web_search").put("max_uses", 2)
@@ -104,46 +113,29 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
         return body
     }
 
-    private fun messageJson(message: ChatMessage): JSONObject {
-        val json = JSONObject().put("role", message.role.wire).put("content", message.content ?: JSONObject.NULL)
-        if (message.toolCalls.isNotEmpty()) {
-            json.put("tool_calls", JSONArray().apply {
+    /** One conversation entry as Responses input items. Assistant turns go back exactly as received. */
+    private fun inputItems(message: ChatMessage): List<JSONObject> = when (message.role) {
+        ChatMessage.Role.SYSTEM -> emptyList() // sent as instructions
+        ChatMessage.Role.USER -> listOf(JSONObject().put("role", "user").put("content", message.content.orEmpty()))
+        ChatMessage.Role.TOOL -> listOf(JSONObject()
+            .put("type", "function_call_output")
+            .put("call_id", message.toolCallId)
+            .put("output", message.content.orEmpty()))
+        ChatMessage.Role.ASSISTANT -> message.replay.ifEmpty {
+            buildList {
+                message.content?.takeIf { it.isNotEmpty() }?.let { add(JSONObject().put("role", "assistant").put("content", it)) }
                 message.toolCalls.forEach { call ->
-                    put(JSONObject().put("id", call.id).put("type", "function")
-                        .put("function", JSONObject().put("name", call.name).put("arguments", call.arguments.ifBlank { "{}" })))
-                }
-            })
-        }
-        message.toolCallId?.let { json.put("tool_call_id", it) }
-        return json
-    }
-
-    private fun choice(payload: String): JSONObject? = try {
-        JSONObject(payload).optJSONArray("choices")?.optJSONObject(0)
-    } catch (e: JSONException) {
-        Log.w(TAG, "Unparseable stream event: ${payload.take(200)}")
-        null
-    }
-
-    /** Streamed tool calls arrive in pieces keyed by index: id and name first, then the arguments JSON. */
-    private class ToolCallAccumulator {
-        private class Partial(var id: String = "", var name: String = "", val arguments: StringBuilder = StringBuilder())
-
-        private val calls = sortedMapOf<Int, Partial>()
-
-        fun add(deltas: JSONArray) {
-            for (i in 0 until deltas.length()) {
-                val delta = deltas.getJSONObject(i)
-                val call = calls.getOrPut(delta.optInt("index")) { Partial() }
-                delta.optString("id").takeIf { it.isNotEmpty() }?.let { call.id = it }
-                delta.optJSONObject("function")?.let { function ->
-                    function.optString("name").takeIf { it.isNotEmpty() }?.let { call.name += it }
-                    if (!function.isNull("arguments")) call.arguments.append(function.optString("arguments"))
+                    add(JSONObject().put("type", "function_call").put("call_id", call.id).put("name", call.name).put("arguments", call.arguments))
                 }
             }
         }
+    }
 
-        fun result(): List<ToolCall> = calls.values.map { ToolCall(it.id, it.name, it.arguments.toString()) }
+    private fun event(payload: String): JSONObject? = try {
+        JSONObject(payload)
+    } catch (e: JSONException) {
+        Log.w(TAG, "Unparseable stream event: ${payload.take(200)}")
+        null
     }
 
     private fun errorFor(status: Int): ChatException = when (status) {

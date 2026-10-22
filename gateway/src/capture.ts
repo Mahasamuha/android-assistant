@@ -1,8 +1,12 @@
 const MAX_CAPTURE_BYTES = 1_000_000;
 
-interface ChatChunk {
+/** A streamed event from either inference route: a chat-completions chunk or a Responses API event. */
+interface StreamEvent {
   choices?: { delta?: { content?: string | null } }[];
   usage?: unknown;
+  type?: string;
+  delta?: string;
+  response?: { usage?: unknown };
 }
 
 /** Copies response bytes as they stream past, for the body log. Never delays the stream. */
@@ -33,9 +37,11 @@ export class ResponseCapture {
     if (events.length > 0) {
       let text = "";
       for (const payload of events) {
-        const chunk = parseJson(payload) as ChatChunk | undefined;
-        text += chunk?.choices?.[0]?.delta?.content ?? "";
-        if (chunk?.usage) summary.usage = chunk.usage;
+        const event = parseJson(payload) as StreamEvent | undefined;
+        text += event?.choices?.[0]?.delta?.content ?? "";
+        if (event?.usage) summary.usage = event.usage;
+        if (event?.type === "response.output_text.delta") text += event.delta ?? "";
+        if (event?.type === "response.completed" && event.response?.usage) summary.usage = event.response.usage;
       }
       summary.text = text;
     } else {
