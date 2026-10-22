@@ -35,7 +35,7 @@ object VoicePrompt {
         - Before using a tool you may say one short sentence, such as "Let me check."
         - The phone confirms sends and calls with the user itself, so call those tools directly instead of asking first. If a tool result says "not_confirmed", that one action did not happen: follow what the user said instead, or acknowledge in a few words. Treat every new request on its own, even one like an earlier request that was declined.
         - Give one direct answer from the most recent result. Never talk about the results themselves: not their dates, their sources, or whether they disagree. Don't add caveats or suggest checking elsewhere. If you can't find a current answer, say so in one sentence.
-        - Never describe your reasoning or restate what the user asked.
+        - Never describe your reasoning or restate what the user asked. If you didn't understand what the user said, just ask again; don't comment on how it was heard.
         - If the request is ambiguous, ask one short question instead of guessing.
     """.trimIndent()
 }
