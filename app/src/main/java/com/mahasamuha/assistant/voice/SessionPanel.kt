@@ -155,7 +155,7 @@ private fun Transcript(state: PanelState, onOpenSource: (String) -> Unit, modifi
                     Bubble(message.text, message.fromUser, sources = message.sources.size, onSources = {
                         openSources = if (openSources == index) null else index
                     })
-                    if (openSources == index) SourceList(message.sources, onOpenSource)
+                    if (openSources == index) SourceList(message.sources, message.sourcesCited, onOpenSource)
                 }
             }
         }
@@ -210,16 +210,16 @@ private fun SourcesPill(count: Int, onClick: () -> Unit, modifier: Modifier = Mo
     }
 }
 
-/** The pages a search found, in an inset well under the bubble; tapping one opens it in the browser. */
+/** A reply's sources in an inset well under the bubble; tapping one opens it in the browser. */
 @Composable
-private fun SourceList(sources: List<SourceLink>, onOpen: (String) -> Unit) {
+private fun SourceList(sources: List<SourceLink>, cited: Boolean, onOpen: (String) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth(0.92f)
             .background(AppTheme.colors.inset, RoundedCornerShape(10.dp))
             .padding(vertical = 8.dp),
     ) {
-        MonoLabel("search results", Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
+        MonoLabel(if (cited) "sources" else "search results", Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
         sources.forEach { source ->
             Column(
                 modifier = Modifier

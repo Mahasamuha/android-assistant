@@ -65,10 +65,15 @@ sealed interface ChatEvent {
     data class ToolCalls(val calls: List<ToolCall>) : ChatEvent
 
     /**
-     * Emitted last: what to keep in [ChatMessage.replay] for this response, and the web pages its searches
-     * found (shown with the answer; Anthropic requires sources alongside search answers shown to users).
+     * Emitted last: what to keep in [ChatMessage.replay] for this response, and its web sources (shown with
+     * the answer; Anthropic requires sources alongside search answers shown to users). [sourcesCited] says
+     * whether they are the pages the answer cited, or only everything its searches returned.
      */
-    data class Finished(val replay: List<JSONObject>, val sources: List<SourceLink> = emptyList()) : ChatEvent
+    data class Finished(
+        val replay: List<JSONObject>,
+        val sources: List<SourceLink> = emptyList(),
+        val sourcesCited: Boolean = false,
+    ) : ChatEvent
 }
 
 /** A web page a search returned. */

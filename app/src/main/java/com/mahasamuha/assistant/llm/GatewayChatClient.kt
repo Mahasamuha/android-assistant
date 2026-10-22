@@ -50,6 +50,9 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
                 // Items are collected as each one finishes: in a streamed search, the LLM gateway's final
                 // response.completed omits the web_search_call items (docs/phase3-notes.md).
                 val items = mutableListOf<JSONObject>()
+                // Citations arrive as their own events (message items carry none), also when the answer
+                // draws on an earlier turn's search.
+                val cited = mutableListOf<SourceLink>()
                 var completed = false
                 connection.inputStream.bufferedReader().useLines { lines ->
                     for (line in lines) {
@@ -58,6 +61,7 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
                         when (event.optString("type")) {
                             "response.output_text.delta" -> event.optString("delta").takeIf { it.isNotEmpty() }?.let { send(ChatEvent.Text(it)) }
                             "response.output_item.done" -> event.optJSONObject("item")?.let(items::add)
+                            "response.output_text.annotation.added" -> event.optJSONObject("annotation")?.let(::sourceLink)?.let(cited::add)
                             // Incomplete means a limit was hit (e.g. max tokens): keep what arrived.
                             "response.completed", "response.incomplete" -> completed = true
                             "response.failed", "error" -> throw ChatException.Unavailable("Response failed: ${event.toString().take(300)}")
@@ -72,7 +76,8 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
                 val calls = kept.filter { it.optString("type") == "function_call" }
                     .map { ToolCall(it.getString("call_id"), it.getString("name"), it.optString("arguments")) }
                 if (calls.isNotEmpty()) send(ChatEvent.ToolCalls(calls))
-                send(ChatEvent.Finished(kept, sources(kept)))
+                val sources = cited.distinctBy { it.url }
+                send(ChatEvent.Finished(kept, sources.ifEmpty { searchResults(kept) }, sourcesCited = sources.isNotEmpty()))
                 close()
             } catch (e: ChatException) {
                 close(e)
@@ -135,21 +140,20 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
         }
     }
 
-    /**
-     * Pages the searches returned, in order, without repeats. These are all results, not only the cited
-     * ones: streamed message items arrive without their citation annotations.
-     */
-    private fun sources(items: List<JSONObject>): List<SourceLink> = items
+    /** Every page this response's searches returned, in order: the fallback when the answer cited nothing. */
+    private fun searchResults(items: List<JSONObject>): List<SourceLink> = items
         .filter { it.optString("type") == "web_search_call" }
         .flatMap { item ->
             val sources = item.optJSONObject("action")?.optJSONArray("sources") ?: JSONArray()
-            (0 until sources.length()).mapNotNull { i ->
-                val source = sources.optJSONObject(i) ?: return@mapNotNull null
-                val url = source.optString("url").takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: return@mapNotNull null
-                SourceLink(source.optString("title").ifBlank { Uri.parse(url).host.orEmpty() }, url)
-            }
+            (0 until sources.length()).mapNotNull { i -> sources.optJSONObject(i)?.let(::sourceLink) }
         }
         .distinctBy { it.url }
+
+    /** A `url_citation` annotation or a search source, as a link; null without a web URL. */
+    private fun sourceLink(json: JSONObject): SourceLink? {
+        val url = json.optString("url").takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: return null
+        return SourceLink(json.optString("title").ifBlank { Uri.parse(url).host.orEmpty() }, url)
+    }
 
     private fun event(payload: String): JSONObject? = try {
         JSONObject(payload)

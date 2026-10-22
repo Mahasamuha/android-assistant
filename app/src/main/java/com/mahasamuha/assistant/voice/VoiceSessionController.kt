@@ -54,6 +54,8 @@ data class PanelMessage(
     val text: String,
     val note: Boolean = false,
     val sources: List<SourceLink> = emptyList(),
+    /** True when [sources] are the pages the reply cited; false when they are all of its search results. */
+    val sourcesCited: Boolean = false,
 )
 
 /** A problem the user can act on; the message is spoken as is. */
@@ -196,6 +198,7 @@ class VoiceSessionController(
             var calls = emptyList<ToolCall>()
             var replay = emptyList<JSONObject>()
             var sources = emptyList<SourceLink>()
+            var sourcesCited = false
             var bubble: Int? = null // this round's reply bubble in the transcript
             chat.stream(history.toList(), options).collect { event ->
                 when (event) {
@@ -218,6 +221,7 @@ class VoiceSessionController(
                     is ChatEvent.Finished -> {
                         replay = event.replay
                         sources = event.sources
+                        sourcesCited = event.sourcesCited
                     }
                 }
             }
@@ -227,7 +231,7 @@ class VoiceSessionController(
             history += ChatMessage(Role.ASSISTANT, text.toString().ifEmpty { null }, toolCalls = calls, replay = replay)
             bubble?.takeIf { sources.isNotEmpty() }?.let { index ->
                 _state.update { state ->
-                    state.copy(transcript = state.transcript.mapIndexed { i, m -> if (i == index) m.copy(sources = sources) else m })
+                    state.copy(transcript = state.transcript.mapIndexed { i, m -> if (i == index) m.copy(sources = sources, sourcesCited = sourcesCited) else m })
                 }
             }
             if (calls.isEmpty()) return spoken.toString().trim()
