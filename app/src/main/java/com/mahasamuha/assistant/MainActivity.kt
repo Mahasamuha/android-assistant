@@ -14,15 +14,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,11 +27,20 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.mahasamuha.assistant.auth.NotSignedInException
+import com.mahasamuha.assistant.ui.AppTheme
+import com.mahasamuha.assistant.ui.AppType
 import com.mahasamuha.assistant.ui.AssistantTheme
+import com.mahasamuha.assistant.ui.GhostButton
+import com.mahasamuha.assistant.ui.Hairline
+import com.mahasamuha.assistant.ui.Mark
+import com.mahasamuha.assistant.ui.MonoLabel
+import com.mahasamuha.assistant.ui.PrimaryButton
+import com.mahasamuha.assistant.ui.StatusDot
 import com.mahasamuha.assistant.voice.TAG
 import kotlinx.coroutines.launch
 
@@ -116,6 +122,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** The next thing to set up gets the one primary button; everything else is a ghost button. */
+private enum class Step { Role, SignIn, Mic, None }
+
 @Composable
 private fun SetupScreen(
     roleHeld: Boolean,
@@ -129,7 +138,28 @@ private fun SetupScreen(
     onAllowMic: () -> Unit,
     onAllowLocation: () -> Unit,
 ) {
-    Surface(modifier = Modifier.fillMaxSize()) {
+    val colors = AppTheme.colors
+    val next = when {
+        !roleHeld -> Step.Role
+        !signedIn -> Step.SignIn
+        !micAllowed -> Step.Mic
+        else -> Step.None
+    }
+
+    @Composable
+    fun Action(step: Step, label: String, onClick: () -> Unit) =
+        if (step == next) PrimaryButton(label, onClick) else GhostButton(label, onClick)
+
+    @Composable
+    fun Status(done: Boolean, text: String) = Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatusDot(done)
+        Text(text, style = AppType.body, color = colors.text)
+    }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = colors.surface) {
         Column(
             modifier = Modifier
                 .safeDrawingPadding()
@@ -137,39 +167,42 @@ private fun SetupScreen(
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Assistant setup", style = MaterialTheme.typography.headlineMedium)
-            Text(
-                if (roleHeld) "This app is the default digital assistant."
-                else "This app is not the default digital assistant yet.",
-                style = MaterialTheme.typography.titleMedium,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    MonoLabel("mahasamuha · assistant")
+                    Text("Assistant setup", style = AppType.h3, color = colors.text)
+                }
+                Mark(size = 40.dp)
+            }
+
+            Hairline()
+            MonoLabel("digital assistant")
+            Status(roleHeld, if (roleHeld) "This app is the default digital assistant." else "Not the default digital assistant yet.")
             Text(
                 "1. Open the digital assistant settings and choose this app.\n" +
                     "2. In Settings → System → Gestures → Press & hold power button, choose Digital assistant.\n" +
                     "3. Long-press the power button to open the panel.",
+                style = AppType.body,
+                color = colors.textBody,
             )
-            Button(onClick = onOpenAssistantSettings) { Text("Open digital assistant settings") }
+            Action(Step.Role, "open assistant settings ↗", onOpenAssistantSettings)
 
-            HorizontalDivider()
-            Text(if (signedIn) "Signed in." else "Not signed in.", style = MaterialTheme.typography.titleMedium)
-            if (signedIn) {
-                OutlinedButton(onClick = onSignOut) { Text("Sign out") }
-            } else {
-                Button(onClick = onSignIn) { Text("Sign in") }
-            }
+            Hairline()
+            MonoLabel("account")
+            Status(signedIn, if (signedIn) "Signed in." else "Not signed in.")
+            if (signedIn) GhostButton("sign out", onSignOut) else Action(Step.SignIn, "sign in →", onSignIn)
 
-            HorizontalDivider()
-            Text(
-                if (micAllowed) "Microphone allowed." else "The assistant needs the microphone.",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            if (!micAllowed) Button(onClick = onAllowMic) { Text("Allow microphone") }
-            Text(
+            Hairline()
+            MonoLabel("permissions")
+            Status(micAllowed, if (micAllowed) "Microphone allowed." else "The assistant needs the microphone.")
+            if (!micAllowed) Action(Step.Mic, "allow microphone", onAllowMic)
+            Status(
+                locationAllowed,
                 if (locationAllowed) "Approximate location allowed (city level, for local answers)."
                 else "Optional: approximate location, so questions like the weather know your city.",
             )
-            if (!locationAllowed) OutlinedButton(onClick = onAllowLocation) { Text("Allow approximate location") }
-            message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            if (!locationAllowed) GhostButton("allow approximate location", onAllowLocation)
+            message?.let { Text(it, style = AppType.caption, color = colors.textMuted) }
         }
     }
 }
