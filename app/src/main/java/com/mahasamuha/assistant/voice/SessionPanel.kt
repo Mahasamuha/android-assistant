@@ -38,6 +38,8 @@ import com.mahasamuha.assistant.ui.Hairline
 import com.mahasamuha.assistant.ui.Mark
 import com.mahasamuha.assistant.ui.MonoLabel
 import com.mahasamuha.assistant.ui.PrimaryButton
+import com.mahasamuha.assistant.ui.PulseDot
+import com.mahasamuha.assistant.ui.TypingBubble
 import com.mahasamuha.assistant.voice.PanelState.Phase
 
 /** Bottom sheet-style panel in the design system's ChatPanel style; tapping outside it closes the session. */
@@ -83,7 +85,12 @@ fun SessionPanel(
                     .padding(horizontal = 24.dp, vertical = 22.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Pulses while the assistant is busy or listening, so a wait never looks like nothing is happening.
+                    PulseDot(
+                        active = state.phase != Phase.Idle,
+                        color = if (state.phase == Phase.Idle) colors.textMuted else colors.status,
+                    )
                     MonoLabel("assistant · ${statusText(state)}", modifier = Modifier.weight(1f))
                     Mark(size = 32.dp)
                 }
@@ -114,9 +121,11 @@ fun SessionPanel(
 @Composable
 private fun Transcript(state: PanelState, modifier: Modifier = Modifier) {
     val listState = rememberLazyListState()
-    val itemCount = state.transcript.size + if (state.hearing.isNotEmpty()) 1 else 0
+    // Waiting on the model or a tool; the phase moves on as soon as a reply starts streaming in.
+    val working = state.phase == Phase.Thinking
+    val itemCount = state.transcript.size + (if (state.hearing.isNotEmpty()) 1 else 0) + (if (working) 1 else 0)
     // Follow new bubbles and the one that is still streaming.
-    LaunchedEffect(itemCount, state.transcript.lastOrNull()?.text, state.hearing) {
+    LaunchedEffect(itemCount, state.transcript.lastOrNull()?.text, state.hearing, working) {
         if (itemCount > 0) listState.animateScrollToItem(itemCount - 1)
     }
     LazyColumn(
@@ -127,6 +136,9 @@ private fun Transcript(state: PanelState, modifier: Modifier = Modifier) {
         items(state.transcript) { message -> Bubble(message.text, message.fromUser) }
         if (state.hearing.isNotEmpty()) {
             item { Bubble(state.hearing, fromUser = true, modifier = Modifier.alpha(0.6f)) }
+        }
+        if (working) {
+            item { TypingBubble() }
         }
     }
 }

@@ -1,9 +1,17 @@
 package com.mahasamuha.assistant.ui
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -15,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
@@ -81,6 +90,49 @@ fun StatusDot(done: Boolean, modifier: Modifier = Modifier) {
             .then(if (done) Modifier.background(colors.status, CircleShape) else Modifier.border(1.dp, colors.textMuted, CircleShape)),
     )
 }
+
+/** A dot that fades in and out while something is in progress; steady when [active] is false. */
+@Composable
+fun PulseDot(active: Boolean, color: Color, modifier: Modifier = Modifier) {
+    val pulse = rememberInfiniteTransition(label = "pulse").animateFloat(
+        initialValue = 1f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(tween(PULSE_MS), RepeatMode.Reverse),
+        label = "pulse-alpha",
+    )
+    Box(
+        modifier = modifier
+            .size(8.dp)
+            .alpha(if (active) pulse.value else 1f)
+            .background(color, CircleShape),
+    )
+}
+
+/** An assistant bubble with three dots fading in turn: the assistant is working on a reply. */
+@Composable
+fun TypingBubble(modifier: Modifier = Modifier) {
+    val colors = AppTheme.colors
+    val transition = rememberInfiniteTransition(label = "typing")
+    Row(
+        modifier = modifier
+            .background(colors.bubbleAssistant, RoundedCornerShape(14.dp, 14.dp, 14.dp, 4.dp))
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        repeat(3) { i ->
+            val alpha = transition.animateFloat(
+                initialValue = 1f,
+                targetValue = 0.25f,
+                animationSpec = infiniteRepeatable(tween(PULSE_MS), RepeatMode.Reverse, StartOffset(i * PULSE_MS / 3)),
+                label = "typing-dot-$i",
+            )
+            Box(Modifier.size(6.dp).alpha(alpha.value).background(colors.textMuted, CircleShape))
+        }
+    }
+}
+
+// Quiet, slow fades, in keeping with the design system's motion (no spinners).
+private const val PULSE_MS = 600
 
 @Composable
 fun Hairline(modifier: Modifier = Modifier) {

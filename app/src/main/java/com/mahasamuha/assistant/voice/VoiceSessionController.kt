@@ -189,7 +189,13 @@ class VoiceSessionController(
                         val started = text.isNotBlank()
                         text.append(event.delta)
                         if (text.isNotBlank()) {
-                            if (started) replaceLastMessage(text.toString().trim()) else addMessage(fromUser = false, text.toString().trim())
+                            if (started) {
+                                replaceLastMessage(text.toString().trim())
+                            } else {
+                                // The reply is arriving, so the panel stops showing the waiting indicator.
+                                addMessage(fromUser = false, text.toString().trim())
+                                _state.update { it.copy(phase = PanelState.Phase.Speaking) }
+                            }
                         }
                         for (sentence in splitter.add(event.delta)) speakSentence(sentence)
                     }
