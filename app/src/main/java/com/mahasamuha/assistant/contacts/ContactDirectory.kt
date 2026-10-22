@@ -51,8 +51,9 @@ class ContactDirectory(private val resolver: ContentResolver, private val resour
 
     /**
      * Every contact the provider matches to [number], with the number as saved and its label. Usually one;
-     * several when the number is saved under more than one contact. The match is loose (it can ignore
-     * a country or area code), so a saved number may differ from [number].
+     * several when the number is saved under more than one contact. The saved number may be written
+     * differently from [number] (a `+1` prefix, separators); on the test phone a different area code,
+     * or only the last 7 digits, did not match (docs/phase3-notes.md).
      */
     private suspend fun savedAs(number: String): List<Pair<String, PhoneNumber>> = withContext(Dispatchers.IO) {
         val uri = Uri.withAppendedPath(PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number))
