@@ -98,8 +98,10 @@ class ToolRegistry(tools: List<Tool>) {
         }
     }
 
+    // Scoped explicitly: without the note, a small model treats one "no" as declining later requests too.
     private fun notConfirmed(userSaid: String?) = JSONObject()
         .put("status", "not_confirmed")
+        .put("note", "Only this action was not performed. It says nothing about later requests.")
         .apply { userSaid?.let { put("user_said", it) } }
         .toString()
 
