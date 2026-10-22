@@ -195,6 +195,8 @@ Privacy note: contact lookup happens on the phone; only the matched name and num
 ## 6. Open questions
 
 
+- **Car use (out of scope for now; phase 5 at the earliest):** would Android Auto's voice button (mic icon or steering-wheel button) reach Samu? Expected no: Android Auto routes it to Google's assistant regardless of the default assistant role, and the Car App Library has no assistant category. Plain Bluetooth without Android Auto is more promising: the steering-wheel button likely sends the same voice-search intent as a headset button, which a trampoline activity can catch (`docs/phase1-notes.md`). Either way, car use also needs lock-screen use (deferred, §2) and a UI that doesn't depend on the phone's screen. Cheap check when it matters: the Android Auto Desktop Head Unit emulator, then the real car with and without Android Auto.
+
 (Resolved: web search, now our own tool, and the MCP client on the phone; see the decisions table.) New questions get added here as they come up.
 
 ## 7. Risks
