@@ -1,5 +1,7 @@
 # Phone Assistant
 
+The assistant is named **Samu**: the app's name and how it introduces itself. Bylines and any about text use "Samu by Mahasamuha".
+
 Personal Android voice assistant, sideloaded onto one Pixel 8 (Android 17, API 37). It replaces Google Assistant for one user. A hosted LLM (Anthropic) sits behind a self-hosted gateway pair that handles spend tracking and caps.
 
 The full design and its rationale are in `docs/plan.md`. Read it before making architectural choices. If something here conflicts with it, the plan wins. If the plan looks wrong, say so; don't silently diverge.

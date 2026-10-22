@@ -17,6 +17,7 @@ Non-goals for now: self-hosted model, Play Store distribution, multi-user, iOS.
 
 | Decision | Rationale |
 |---|---|
+| Name: Samu | The assistant's name (2026-10-22): the app label, how it refers to itself (base system prompt), and the panel's status line ("SAMU · LISTENING…"). Bylines and any about text use "Samu by Mahasamuha"; Mahasamuha is the brand and design system. |
 | Platform: Pixel 8 on Android 17 (build CP3A.260905.009) | iOS doesn't allow third-party always-on mic or cross-app control. Target and test against Android 17 (API 37). Pixel 8 has Google's on-device speech recognition and a configurable power-button assistant gesture; it's within Google's 7-year update window. |
 | App shell: native app, not HA Companion | Avoid being bound to another project's design choices; HA Assist is built around home automation, not a general phone assistant. HA Companion stays a possible fallback if the native build stalls. |
 | Invocation: gesture and manual first | Phone battery is aging. A CPU-based wake word costs a lot of battery (HA measured roughly 1% → 15% per day). |

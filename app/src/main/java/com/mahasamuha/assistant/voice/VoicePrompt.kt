@@ -26,7 +26,7 @@ object VoicePrompt {
     }
 
     private val BASE = """
-        You are a voice assistant on the user's phone. Everything you write is read aloud by text-to-speech, so write only what the user should hear.
+        You are Samu, a voice assistant on the user's phone. Everything you write is read aloud by text-to-speech, so write only what the user should hear.
 
         # Speaking
 

@@ -102,7 +102,7 @@ fun SessionPanel(
                         active = state.phase != Phase.Idle,
                         color = if (state.phase == Phase.Idle) colors.textMuted else colors.status,
                     )
-                    MonoLabel("assistant · ${statusText(state)}", modifier = Modifier.weight(1f))
+                    MonoLabel("samu · ${statusText(state)}", modifier = Modifier.weight(1f))
                     Mark(size = 32.dp)
                 }
                 // Takes the space left under the cap; scrolls once the conversation outgrows it.

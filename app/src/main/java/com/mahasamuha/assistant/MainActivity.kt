@@ -199,8 +199,9 @@ private fun SetupScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    MonoLabel("mahasamuha · assistant")
-                    Text("Assistant setup", style = AppType.h3, color = colors.text)
+                    // The byline wherever the app describes itself; the app's name alone is "Samu".
+                    MonoLabel("samu by mahasamuha")
+                    Text("Setup", style = AppType.h3, color = colors.text)
                 }
                 Mark(size = 40.dp)
             }
