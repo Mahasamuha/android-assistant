@@ -79,8 +79,7 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
             .put("model", options.model)
             .put("max_tokens", options.maxTokens)
             .put("stream", true)
-            // Thinking off: cuts time to first words from ~5 s to ~2 s on web-search turns.
-            .put("reasoning_effort", "none")
+            .put("reasoning_effort", options.reasoningEffort)
             .put("messages", JSONArray().apply { messages.forEach { put(messageJson(it)) } })
         val tools = JSONArray()
         options.tools.forEach { tool ->

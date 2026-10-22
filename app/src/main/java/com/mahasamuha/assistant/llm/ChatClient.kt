@@ -38,7 +38,14 @@ data class ToolAnnotations(
 
 data class ChatOptions(
     val model: String = "anthropic/claude-haiku-5-5",
-    val maxTokens: Int = 400,
+    /** Includes thinking tokens, so it leaves room for the answer after a longer think. */
+    val maxTokens: Int = 1000,
+    /**
+     * OpenAI-style `reasoning_effort`. "low" keeps the model's reasoning in an unspoken thinking step: with
+     * "none" it often narrated its reasoning aloud ("I'll check…", "The user wants…") despite the prompt.
+     * Costs about 0.5–2 s before the first word on plain and search answers (docs/phase3-notes.md).
+     */
+    val reasoningEffort: String = "low",
     val webSearch: Boolean = true,
     val tools: List<ToolDefinition> = emptyList(),
     /** Approximate location for web search: IANA time zone, plus city/region/country when known. */
