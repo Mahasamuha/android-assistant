@@ -1,13 +1,11 @@
 package com.mahasamuha.assistant.sms
 
-import android.telephony.PhoneNumberUtils
 import com.mahasamuha.assistant.contacts.ContactDirectory
 import com.mahasamuha.assistant.llm.ToolAnnotations
 import com.mahasamuha.assistant.llm.ToolDefinition
 import com.mahasamuha.assistant.tools.ActionTool
 import com.mahasamuha.assistant.tools.Confirmation
 import com.mahasamuha.assistant.tools.PendingAction
-import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -44,23 +42,13 @@ class SendSmsTool(private val sender: SmsSender, private val contacts: ContactDi
         require(number.count { it.isDigit() } >= 3) { "A phone number is required" }
         require(message.isNotEmpty()) { "The message is empty" }
 
-        val recipient = describeRecipient(number)
+        val recipient = contacts?.describe(number) ?: ContactDirectory.formatNumber(number)
         val body = if (message.last() in ".!?") message else "$message."
         return PendingAction(Confirmation.Ask("Text $recipient: $body Send it?")) {
             when (sender.send(number, message)) {
                 SmsSender.Outcome.Sent -> JSONObject().put("status", "sent")
                 SmsSender.Outcome.Pending -> JSONObject().put("status", "sending").put("note", "The phone hasn't confirmed it was sent yet")
             }.toString()
-        }
-    }
-
-    /** Names everyone the number is saved under, so a shared number isn't read back as just one of them. */
-    private suspend fun describeRecipient(number: String): String {
-        val names = contacts?.namesFor(number).orEmpty()
-        return when (names.size) {
-            0 -> PhoneNumberUtils.formatNumber(number, Locale.getDefault().country) ?: number
-            1 -> names.single().let { (name, label) -> "$name, ${label.lowercase()}" }
-            else -> names.joinToString(" or ") { it.first } + " (same number)"
         }
     }
 }

@@ -5,6 +5,8 @@ import android.content.res.Resources
 import android.net.Uri
 import android.provider.ContactsContract.CommonDataKinds.Phone
 import android.provider.ContactsContract.PhoneLookup
+import android.telephony.PhoneNumberUtils
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -51,5 +53,26 @@ class ContactDirectory(private val resolver: ContentResolver, private val resour
             }
         }
         names.toList()
+    }
+
+    /**
+     * How a read-back or announcement names [number]: the contact and number type, everyone it's saved
+     * under when it's shared ("Sam Lee or Sam Ortiz (same number)"), or the formatted number.
+     */
+    suspend fun describe(number: String): String {
+        val names = namesFor(number)
+        return when (names.size) {
+            0 -> formatNumber(number)
+            1 -> names.single().let { (name, label) -> "$name, ${label.lowercase()}" }
+            else -> names.joinToString(" or ") { it.first } + " (same number)"
+        }
+    }
+
+    companion object {
+        fun formatNumber(number: String): String =
+            PhoneNumberUtils.formatNumber(number, Locale.getDefault().country) ?: number
+
+        fun sameNumber(a: String, b: String): Boolean =
+            PhoneNumberUtils.areSamePhoneNumber(a, b, Locale.getDefault().country.lowercase())
     }
 }

@@ -3,6 +3,7 @@ package com.mahasamuha.assistant.voice
 import android.Manifest
 import android.app.KeyguardManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
@@ -52,7 +53,8 @@ class AssistantSession(context: Context) :
             scope = lifecycleScope,
             stt = PlatformSpeechToText(context),
             chat = app.chatClient,
-            tools = app.sessionTools(),
+            // From the session's own context while the panel is up; Android 17 blocks background launches.
+            tools = app.sessionTools(launch = { intent -> context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }),
             skills = app.skills,
             speaker = speaker,
             locationSource = app.locationSource,
@@ -100,8 +102,8 @@ class AssistantSession(context: Context) :
 
     override fun onHide() {
         Log.i(TAG, "Session.onHide")
-        // Dismissing the panel means "stop talking". Phase 3: when the session hides because it
-        // launched something itself (e.g. a call), let the announcement finish instead.
+        // Dismissing the panel means "stop talking". A call's announcement has already finished by
+        // the time the dialer launches and hides the panel (the confirmation waits for it).
         controller.stop()
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
         super.onHide()

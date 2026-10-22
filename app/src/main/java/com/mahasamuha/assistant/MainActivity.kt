@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
     private var locationAllowed by mutableStateOf(false)
     private var contactsAllowed by mutableStateOf(false)
     private var smsAllowed by mutableStateOf(false)
+    private var callsAllowed by mutableStateOf(false)
     private var message by mutableStateOf<String?>(null)
 
     private val requestMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -70,6 +71,10 @@ class MainActivity : ComponentActivity() {
 
     private val requestSms = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         smsAllowed = granted
+    }
+
+    private val requestCalls = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        callsAllowed = granted
     }
 
     private val signIn = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -92,6 +97,7 @@ class MainActivity : ComponentActivity() {
                     locationAllowed = locationAllowed,
                     contactsAllowed = contactsAllowed,
                     smsAllowed = smsAllowed,
+                    callsAllowed = callsAllowed,
                     message = message,
                     onOpenAssistantSettings = { open(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) },
                     onSignIn = { runReporting("Sign-in") { signIn.launch(app.auth.signInIntent()); null } },
@@ -100,6 +106,7 @@ class MainActivity : ComponentActivity() {
                     onAllowLocation = { requestLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
                     onAllowContacts = { requestContacts.launch(Manifest.permission.READ_CONTACTS) },
                     onAllowSms = { requestSms.launch(Manifest.permission.SEND_SMS) },
+                    onAllowCalls = { requestCalls.launch(Manifest.permission.CALL_PHONE) },
                 )
             }
         }
@@ -112,6 +119,7 @@ class MainActivity : ComponentActivity() {
         locationAllowed = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         contactsAllowed = checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
         smsAllowed = checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+        callsAllowed = checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
     }
 
     /** UI boundary: runs [block] and shows its result, or the error, as the status message. */
@@ -149,6 +157,7 @@ private fun SetupScreen(
     locationAllowed: Boolean,
     contactsAllowed: Boolean,
     smsAllowed: Boolean,
+    callsAllowed: Boolean,
     message: String?,
     onOpenAssistantSettings: () -> Unit,
     onSignIn: () -> Unit,
@@ -157,6 +166,7 @@ private fun SetupScreen(
     onAllowLocation: () -> Unit,
     onAllowContacts: () -> Unit,
     onAllowSms: () -> Unit,
+    onAllowCalls: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val next = when {
@@ -234,6 +244,12 @@ private fun SetupScreen(
                 else "Optional: sending texts, always after you confirm.",
             )
             if (!smsAllowed) GhostButton("allow texting", onAllowSms)
+            Status(
+                callsAllowed,
+                if (callsAllowed) "Calling allowed. Calls are announced, and confirmed first when the contact isn't certain."
+                else "Optional: placing calls.",
+            )
+            if (!callsAllowed) GhostButton("allow calling", onAllowCalls)
             message?.let { Text(it, style = AppType.caption, color = colors.textMuted) }
         }
     }
