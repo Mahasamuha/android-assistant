@@ -57,14 +57,15 @@ class ContactDirectory(private val resolver: ContentResolver, private val resour
 
     /**
      * How a read-back or announcement names [number]: the contact and number type, everyone it's saved
-     * under when it's shared ("Sam Lee or Sam Ortiz (same number)"), or the formatted number.
+     * under when it's shared ("the number saved as Sam Lee and Sam Ortiz"), or the formatted number.
+     * Never phrased as a choice: it's read inside yes/no questions, and "A or B?" invites a name back.
      */
     suspend fun describe(number: String): String {
         val names = namesFor(number)
         return when (names.size) {
             0 -> formatNumber(number)
             1 -> names.single().let { (name, label) -> "$name, ${label.lowercase()}" }
-            else -> names.joinToString(" or ") { it.first } + " (same number)"
+            else -> "the number saved as " + names.joinToString(" and ") { it.first }
         }
     }
 
