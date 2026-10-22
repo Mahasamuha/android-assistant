@@ -14,15 +14,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import com.mahasamuha.assistant.tools.Confirmation
 import com.mahasamuha.assistant.ui.AppTheme
@@ -78,19 +81,7 @@ fun SessionPanel(
                     MonoLabel("assistant · ${statusText(state)}", modifier = Modifier.weight(1f))
                     Mark(size = 32.dp)
                 }
-                if (state.heard.isNotEmpty()) {
-                    // Right-aligned, at most 78% of the width.
-                    Box(Modifier.fillMaxWidth(0.78f).align(Alignment.End), contentAlignment = Alignment.CenterEnd) {
-                        ChatBubble(state.heard, fromUser = true)
-                    }
-                }
-                if (state.reply.isNotEmpty()) {
-                    ChatBubble(
-                        state.reply,
-                        fromUser = false,
-                        modifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
-                    )
-                }
+                Transcript(state)
                 state.error?.let { error ->
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         MonoLabel("couldn't finish")
@@ -108,6 +99,37 @@ fun SessionPanel(
                     GhostButton("close", onClick = onClose)
                 }
             }
+        }
+    }
+}
+
+/** The conversation so far as bubbles, kept scrolled to the newest; words still being heard show faded. */
+@Composable
+private fun Transcript(state: PanelState) {
+    val listState = rememberLazyListState()
+    val itemCount = state.transcript.size + if (state.hearing.isNotEmpty()) 1 else 0
+    // Follow new bubbles and the one that is still streaming.
+    LaunchedEffect(itemCount, state.transcript.lastOrNull()?.text, state.hearing) {
+        if (itemCount > 0) listState.animateScrollToItem(itemCount - 1)
+    }
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(state.transcript) { message -> Bubble(message.text, message.fromUser) }
+        if (state.hearing.isNotEmpty()) {
+            item { Bubble(state.hearing, fromUser = true, modifier = Modifier.alpha(0.6f)) }
+        }
+    }
+}
+
+/** User bubbles sit on the right at up to 78% of the width; the assistant's on the left at up to 92%. */
+@Composable
+private fun Bubble(text: String, fromUser: Boolean, modifier: Modifier = Modifier) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = if (fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
+        Box(Modifier.fillMaxWidth(if (fromUser) 0.78f else 0.92f), contentAlignment = if (fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
+            ChatBubble(text, fromUser = fromUser, modifier = modifier)
         }
     }
 }

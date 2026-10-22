@@ -32,14 +32,18 @@ import kotlinx.coroutines.selects.select
 
 data class PanelState(
     val phase: Phase = Phase.Starting,
-    val heard: String = "",
-    val reply: String = "",
+    /** The session's conversation as shown, one entry per bubble. Kept for the whole session, like the history. */
+    val transcript: List<PanelMessage> = emptyList(),
+    /** Words recognized so far while the user speaks; moves into [transcript] when they finish. */
+    val hearing: String = "",
     val error: String? = null,
     /** An action waiting on the user: shown with Confirm/Cancel (ask) or just Cancel (announce). */
     val confirming: Confirmation? = null,
 ) {
     enum class Phase { Starting, Listening, Thinking, Speaking, Idle }
 }
+
+data class PanelMessage(val fromUser: Boolean, val text: String)
 
 /** A problem the user can act on; the message is spoken as is. */
 private class UserFacingException(message: String) : Exception(message)
@@ -95,7 +99,7 @@ class VoiceSessionController(
 
     /** A follow-up turn listens right after an answer; if the user says nothing, it just stops. */
     private suspend fun runTurn(followUp: Boolean) {
-        _state.value = if (followUp) _state.value.copy(phase = PanelState.Phase.Starting) else PanelState(phase = PanelState.Phase.Starting)
+        _state.update { it.copy(phase = PanelState.Phase.Starting, hearing = "", error = null) }
         var answered = false
         try {
             checkPreconditions()
@@ -106,13 +110,13 @@ class VoiceSessionController(
             } catch (e: Exception) {
                 location.cancel()
                 if (followUp && e is SttException && e.noSpeech) {
-                    _state.update { it.copy(phase = PanelState.Phase.Idle) }
+                    _state.update { it.copy(phase = PanelState.Phase.Idle, hearing = "") }
                     return
                 }
                 throw e
             }
             if (heard.isBlank()) throw UserFacingException("I didn't catch that.")
-            _state.update { it.copy(reply = "", error = null) }
+            addMessage(fromUser = true, heard)
 
             val place = location.await()
             if (history.isEmpty()) history += ChatMessage(Role.SYSTEM, VoicePrompt.system(activeSkills, place))
@@ -135,7 +139,7 @@ class VoiceSessionController(
         } catch (e: Exception) {
             val message = userMessage(e)
             Log.w(TAG, "Turn failed: $message", e)
-            _state.update { it.copy(phase = PanelState.Phase.Idle, error = message) }
+            _state.update { it.copy(phase = PanelState.Phase.Idle, hearing = "", error = message) }
             try {
                 speaker.speak(message)
             } catch (speakError: Exception) {
@@ -157,10 +161,10 @@ class VoiceSessionController(
         var final = ""
         stt.listen().collect { event ->
             when (event) {
-                is SttEvent.Partial -> _state.update { it.copy(heard = event.text) }
+                is SttEvent.Partial -> _state.update { it.copy(hearing = event.text) }
                 is SttEvent.Final -> {
                     final = event.text
-                    _state.update { it.copy(heard = event.text) }
+                    _state.update { it.copy(hearing = event.text) }
                 }
             }
         }
@@ -169,7 +173,8 @@ class VoiceSessionController(
 
     /**
      * Model rounds until it answers without calling tools. Each round's text is spoken as it streams,
-     * including a short "Let me check" before a tool call. Appends to history; returns all spoken text.
+     * including a short "Let me check" before a tool call, and shown as its own bubble. Appends to
+     * history; returns all spoken text.
      */
     private suspend fun respond(place: ApproximateLocation?): String {
         val options = ChatOptions(tools = tools.definitions, timeZone = ZoneId.systemDefault().id, location = place)
@@ -181,8 +186,11 @@ class VoiceSessionController(
             chat.stream(history.toList(), options).collect { event ->
                 when (event) {
                     is ChatEvent.Text -> {
+                        val started = text.isNotBlank()
                         text.append(event.delta)
-                        _state.update { it.copy(reply = (spoken.toString() + text).trim()) }
+                        if (text.isNotBlank()) {
+                            if (started) replaceLastMessage(text.toString().trim()) else addMessage(fromUser = false, text.toString().trim())
+                        }
                         for (sentence in splitter.add(event.delta)) speakSentence(sentence)
                     }
                     is ChatEvent.ToolCalls -> calls = event.calls
@@ -210,29 +218,32 @@ class VoiceSessionController(
         val tapped = CompletableDeferred<Boolean>()
         tap = tapped
         _state.update { it.copy(confirming = confirmation) }
-        val result = try {
+        // The result, plus what to show as the user's side of the exchange (their words, or the button they tapped).
+        val (result, userReply) = try {
             coroutineScope {
                 val spoken = async {
                     speakSentence(confirmation.text)
                     speaker.awaitIdle()
                     when (confirmation) {
                         is Confirmation.Ask -> hearConfirmation()
-                        is Confirmation.Announce -> ConfirmationResult.Confirmed
+                        is Confirmation.Announce -> ConfirmationResult.Confirmed to null
                     }
                 }
-                select {
+                select<Pair<ConfirmationResult, String?>> {
                     spoken.onAwait { it }
                     tapped.onAwait { confirmed ->
                         spoken.cancel()
                         speaker.stop()
-                        if (confirmed) ConfirmationResult.Confirmed else ConfirmationResult.Declined(null)
+                        if (confirmed) ConfirmationResult.Confirmed to "confirm" else ConfirmationResult.Declined(null) to "cancel"
                     }
                 }
             }
         } finally {
             tap = null
-            _state.update { it.copy(confirming = null) }
+            _state.update { it.copy(confirming = null, hearing = "") }
         }
+        addMessage(fromUser = false, confirmation.text)
+        userReply?.let { addMessage(fromUser = true, it) }
         Log.i(TAG, "Confirmation \"${confirmation.text}\" -> $result")
         // v1 acts only while unlocked (plan §2); the phone may have locked while waiting.
         if (result == ConfirmationResult.Confirmed && keyguard.isDeviceLocked) {
@@ -241,15 +252,26 @@ class VoiceSessionController(
         return result
     }
 
-    private suspend fun hearConfirmation(): ConfirmationResult {
+    private suspend fun hearConfirmation(): Pair<ConfirmationResult, String?> {
         val reply = try {
             hear()
         } catch (e: SttException) {
             if (!e.noSpeech) throw e
             ""
-        }
-        return if (ConfirmationReply.isYes(reply)) ConfirmationResult.Confirmed
-        else ConfirmationResult.Declined(reply.ifBlank { null })
+        }.ifBlank { null }
+        val result = if (reply != null && ConfirmationReply.isYes(reply)) ConfirmationResult.Confirmed
+        else ConfirmationResult.Declined(reply)
+        return result to reply
+    }
+
+    /** Adds a bubble and clears the in-progress words. */
+    private fun addMessage(fromUser: Boolean, text: String) {
+        _state.update { it.copy(transcript = it.transcript + PanelMessage(fromUser, text), hearing = "") }
+    }
+
+    /** Updates the bubble that is still streaming. */
+    private fun replaceLastMessage(text: String) {
+        _state.update { it.copy(transcript = it.transcript.dropLast(1) + it.transcript.last().copy(text = text)) }
     }
 
     private suspend fun speakSentence(sentence: String) {
