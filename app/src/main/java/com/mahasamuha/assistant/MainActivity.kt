@@ -40,6 +40,7 @@ import com.mahasamuha.assistant.ui.Hairline
 import com.mahasamuha.assistant.ui.Mark
 import com.mahasamuha.assistant.ui.MonoLabel
 import com.mahasamuha.assistant.ui.PrimaryButton
+import com.mahasamuha.assistant.ui.SecondaryButton
 import com.mahasamuha.assistant.ui.StatusDot
 import com.mahasamuha.assistant.voice.TAG
 import kotlinx.coroutines.launch
@@ -147,7 +148,7 @@ class MainActivity : ComponentActivity() {
 }
 
 /** The next thing to set up gets the one primary button; everything else is a ghost button. */
-private enum class Step { Role, SignIn, Mic, None }
+private enum class Step { Role, SignIn, Mic, Location, Contacts, Sms, Calls, None }
 
 @Composable
 private fun SetupScreen(
@@ -173,12 +174,17 @@ private fun SetupScreen(
         !roleHeld -> Step.Role
         !signedIn -> Step.SignIn
         !micAllowed -> Step.Mic
+        !locationAllowed -> Step.Location
+        !contactsAllowed -> Step.Contacts
+        !smsAllowed -> Step.Sms
+        !callsAllowed -> Step.Calls
         else -> Step.None
     }
 
+    // The next missing step gets the one filled button; the rest are outlined so they still read as buttons.
     @Composable
     fun Action(step: Step, label: String, onClick: () -> Unit) =
-        if (step == next) PrimaryButton(label, onClick) else GhostButton(label, onClick)
+        if (step == next) PrimaryButton(label, onClick) else SecondaryButton(label, onClick)
 
     @Composable
     fun Status(done: Boolean, text: String) = Row(
@@ -232,25 +238,25 @@ private fun SetupScreen(
                 if (locationAllowed) "Approximate location allowed (city level, for local answers)."
                 else "Optional: approximate location, so questions like the weather know your city.",
             )
-            if (!locationAllowed) GhostButton("allow approximate location", onAllowLocation)
+            if (!locationAllowed) Action(Step.Location, "allow approximate location", onAllowLocation)
             Status(
                 contactsAllowed,
                 if (contactsAllowed) "Contacts allowed (only matched names and numbers leave the phone)."
                 else "Optional: contacts, so you can text or call people by name.",
             )
-            if (!contactsAllowed) GhostButton("allow contacts", onAllowContacts)
+            if (!contactsAllowed) Action(Step.Contacts, "allow contacts", onAllowContacts)
             Status(
                 smsAllowed,
                 if (smsAllowed) "Texting allowed. Every text is read back for your confirmation first."
                 else "Optional: sending texts, always after you confirm.",
             )
-            if (!smsAllowed) GhostButton("allow texting", onAllowSms)
+            if (!smsAllowed) Action(Step.Sms, "allow texting", onAllowSms)
             Status(
                 callsAllowed,
-                if (callsAllowed) "Calling allowed. Calls are announced, and confirmed first when the contact isn't certain."
+                if (callsAllowed) "Calling allowed. Calls are announced, or confirmed first when the contact isn't certain or after a search."
                 else "Optional: placing calls.",
             )
-            if (!callsAllowed) GhostButton("allow calling", onAllowCalls)
+            if (!callsAllowed) Action(Step.Calls, "allow calling", onAllowCalls)
             message?.let { Text(it, style = AppType.caption, color = colors.textMuted) }
         }
     }

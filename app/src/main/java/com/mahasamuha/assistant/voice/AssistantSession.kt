@@ -8,9 +8,11 @@ import android.net.Uri
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.provider.Settings
 import android.service.voice.VoiceInteractionSession
 import android.util.Log
 import android.view.View
+import android.view.WindowManager
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
@@ -19,6 +21,11 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
@@ -70,6 +77,31 @@ class AssistantSession(context: Context) :
             keyguard = context.getSystemService(KeyguardManager::class.java),
             hasMicPermission = { context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },
         )
+        keepScreenOnWhileActive()
+    }
+
+    /**
+     * Keeps the screen on while the conversation is active (listening, thinking, speaking, confirming)
+     * and for one screen-timeout length after, so talking counts like touching: the screen goes off only
+     * after the usual timeout with nothing happening. Apps can't reset the system's own timer
+     * (`PowerManager.userActivity` is system-only), so the window flag stands in for it. A turn also
+     * fails if the phone locks mid-way (plan §2), which this avoids.
+     */
+    private fun keepScreenOnWhileActive() {
+        lifecycleScope.launch {
+            controller.state
+                .map { it.phase != PanelState.Phase.Idle || it.confirming != null }
+                .distinctUntilChanged()
+                .collectLatest { active ->
+                    val dialogWindow = window.window ?: return@collectLatest
+                    if (active) {
+                        dialogWindow.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    } else {
+                        delay(Settings.System.getLong(context.contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, DEFAULT_TIMEOUT_MS))
+                        dialogWindow.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    }
+                }
+        }
     }
 
     override fun onCreateContentView(): View = ComposeView(context).apply {
@@ -128,6 +160,7 @@ class AssistantSession(context: Context) :
     }
 
     private companion object {
+        const val DEFAULT_TIMEOUT_MS = 30_000L
         val SHOW_FLAG_NAMES = mapOf(
             SHOW_WITH_ASSIST to "WITH_ASSIST",
             SHOW_WITH_SCREENSHOT to "WITH_SCREENSHOT",

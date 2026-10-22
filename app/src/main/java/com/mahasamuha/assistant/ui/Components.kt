@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,6 +41,22 @@ fun PrimaryButton(label: String, onClick: () -> Unit, modifier: Modifier = Modif
         modifier = modifier,
         shape = RoundedCornerShape(6.dp),
         colors = ButtonDefaults.buttonColors(containerColor = colors.actionBackground, contentColor = colors.actionContent),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+    ) {
+        Text(label, style = AppType.ui)
+    }
+}
+
+/** Hairline outline, full-strength text: an action that isn't the primary but should still read as a button. */
+@Composable
+fun SecondaryButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = AppTheme.colors
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(6.dp),
+        border = BorderStroke(1.dp, colors.text.copy(alpha = 0.35f)),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.text),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
     ) {
         Text(label, style = AppType.ui)

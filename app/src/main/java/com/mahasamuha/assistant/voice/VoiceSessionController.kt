@@ -146,6 +146,8 @@ class VoiceSessionController(
             }
             if (heard.isBlank()) throw UserFacingException("I didn't catch that.")
             addMessage(fromUser = true, heard)
+            // Listening is over; waiting on location and the tool list counts as thinking.
+            _state.update { it.copy(phase = PanelState.Phase.Thinking) }
 
             val place = location.await()
             if (history.isEmpty()) {
@@ -157,7 +159,6 @@ class VoiceSessionController(
             }
             val turnStart = history.size
             history += ChatMessage(Role.USER, heard)
-            _state.update { it.copy(phase = PanelState.Phase.Thinking) }
 
             val reply = try {
                 respond()

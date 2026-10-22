@@ -8,8 +8,10 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -57,12 +59,12 @@ class McpClient(private val gateways: List<Uri>, private val auth: AuthManager) 
             .put("id", ids.incrementAndGet())
             .put("method", method)
             .put("params", params)
-        val response = withContext(Dispatchers.IO) {
-            // v1 uses the first gateway; the list leaves room for a fallback.
-            val connection = URL("${gateways.first()}/mcp").openConnection() as HttpURLConnection
+        // v1 uses the first gateway; the list leaves room for a fallback.
+        val connection = URL("${gateways.first()}/mcp").openConnection() as HttpURLConnection
+        val response = disconnectingOnCancel(connection) {
             try {
                 connection.requestMethod = "POST"
-                connection.connectTimeout = 10_000
+                connection.connectTimeout = 5_000
                 connection.readTimeout = 30_000
                 connection.instanceFollowRedirects = false // the gateway never redirects; don't send the token elsewhere
                 connection.doOutput = true
@@ -86,6 +88,21 @@ class McpClient(private val gateways: List<Uri>, private val auth: AuthManager) 
         val json = JSONObject(response)
         json.optJSONObject("error")?.let { throw McpException("MCP $method: ${it.optString("message")}") }
         return json.optJSONObject("result") ?: throw McpException("MCP $method returned no result")
+    }
+
+    /**
+     * Runs [exchange] on the IO dispatcher. A blocked read ignores coroutine cancellation, so a caller's
+     * timeout (e.g. [RemoteTools]' tool-list fetch) would otherwise wait for the full read timeout; on
+     * cancellation this disconnects, which ends the read at once.
+     */
+    private suspend fun <T> disconnectingOnCancel(connection: HttpURLConnection, exchange: () -> T): T = coroutineScope {
+        val call = async(Dispatchers.IO) { exchange() }
+        try {
+            call.await()
+        } catch (e: CancellationException) {
+            connection.disconnect()
+            throw e
+        }
     }
 
     private fun definition(tool: JSONObject): ToolDefinition {

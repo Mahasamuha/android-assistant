@@ -65,7 +65,9 @@ class PlaceCallTool(
         // Checked on digits only, since "9 1 1" passes the plain-number check.
         val digits = number.filter { it.isDigit() || it == '+' }
         if (telephony.isEmergencyNumber(digits)) {
-            return PendingAction(Confirmation.Announce("Opening the dialer for $digits.", "Open the dialer for $digits?")) {
+            // Formatted, so it's read as a phone number rather than one large number ("five million…").
+            val spoken = ContactDirectory.formatNumber(digits)
+            return PendingAction(Confirmation.Announce("Opening the dialer for $spoken.", "Open the dialer for $spoken?")) {
                 launch(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", digits, null)).setPackage(telecom.defaultDialerPackage))
                 closePanel()
                 JSONObject().put("status", "dialer_opened").put("note", "The user presses call in the dialer").toString()

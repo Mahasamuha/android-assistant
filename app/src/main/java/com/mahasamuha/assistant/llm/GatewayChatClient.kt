@@ -10,6 +10,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
@@ -30,10 +31,19 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
         // v1 uses the first gateway; the list leaves room for a fallback.
         val connection = URL("${gateways.first()}/v1/responses").openConnection() as HttpURLConnection
 
+        // An unreachable server often still accepts the connection (the reverse proxy answers) and then
+        // sends nothing, so the read timeout alone would leave the user waiting a minute. The gateway
+        // sends headers as soon as the provider starts its reply, so a late first response means it's down.
+        val awaitingResponse = launch {
+            delay(RESPONSE_START_TIMEOUT_MS)
+            Log.w(TAG, "Gateway sent no response in ${RESPONSE_START_TIMEOUT_MS / 1000} s")
+            connection.disconnect()
+        }
+
         launch(Dispatchers.IO) {
             try {
                 connection.requestMethod = "POST"
-                connection.connectTimeout = 10_000
+                connection.connectTimeout = 5_000
                 connection.readTimeout = 60_000
                 connection.instanceFollowRedirects = false // the gateway never redirects; don't send the token elsewhere
                 connection.doOutput = true
@@ -43,6 +53,7 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
                 connection.outputStream.use { it.write(requestBody(messages, options).toString().toByteArray()) }
 
                 val status = connection.responseCode
+                awaitingResponse.cancel()
                 if (status != HttpURLConnection.HTTP_OK) {
                     // Upstream error text can quote the request, so it's logged only in debug builds.
                     val detail = if (BuildConfig.DEBUG) connection.errorStream?.bufferedReader()?.use { it.readText() }?.take(300) else null
@@ -87,7 +98,10 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
             }
         }
 
-        awaitClose { connection.disconnect() }
+        awaitClose {
+            awaitingResponse.cancel()
+            connection.disconnect()
+        }
     }
 
     private fun requestBody(messages: List<ChatMessage>, options: ChatOptions): JSONObject {
@@ -141,5 +155,9 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
         429 -> ChatException.RateLimited()
         in 400..499 -> ChatException.Rejected(status)
         else -> ChatException.Unavailable("Gateway returned $status")
+    }
+
+    private companion object {
+        const val RESPONSE_START_TIMEOUT_MS = 15_000L
     }
 }
