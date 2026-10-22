@@ -65,3 +65,20 @@ Sources pill (2026-10-22): the first version listed every result of the turn's o
 
 On the phone: today, "the next 2 days" (a range), next Wednesday, "5 days from now", and "14 days from now" each fetched the right date and got one short answer; "7 days from now" was recognized as the Wednesday already answered; "3 days ago" and "30 days from now" got the tool's refusals, relayed in one sentence. The wordy, repetitive weather answers from phase 2 are gone.
 Parts of a day work from the same one-day result: "tomorrow afternoon" (Thursday) was answered from the afternoon hours ("clear, a high around 67 by 3 PM"), and "and Friday morning" from the morning hours ("around 47 at 6 AM, about 50 by 9 AM").
+
+## Own search tool spike: Brave Search API (2026-10-22)
+
+Bing's API is retired and Google's Custom Search closed to new customers; Brave (own index, sold for AI answers, $5 per 1,000 with $5 monthly credit) was chosen to try, with Tavily as the fallback. The key lives only in the untracked `deploy/.env`.
+
+Brave endpoints, 5 results each: `web/search` with `extra_snippets` answers in about 0.6 s with about 1,000–2,200 tokens, but its snippets often lack the figure asked for (no S&P or Dow close). `llm/context` (GET `/res/v1/llm/context?q=…`, response `grounding.generic[]` of `{url, title, snippets[]}`) takes about 1.2–1.6 s and returns about 8,000–12,500 tokens of extracted page text that includes the figures.
+
+End to end through Bifrost with the app's prompt, `web_search` as a function tool backed by Brave (result capped at about 6,000 tokens) against Anthropic's server tool:
+
+| Question | Anthropic search | Brave `llm/context` | Brave `web/search` |
+|---|---|---|---|
+| S&P close | 7.4 s, right | 2.8 s, right | 3.5 s, gave yesterday's close |
+| Dow close | 4.9 s, right plus a quoted fragment | 3.3 s, right | 3.7 s, right |
+| 2025 World Series | 5.1 s, right | 5.3 s, right | 4.0 s, right |
+| Artemis news | 5.0 s, plus a quoted headline | 4.8 s, right | 2.4 s, right |
+
+Brave `llm/context` was right on all four, never quoted source text (no citation blocks exist on this path), and was as fast or faster despite the extra model round. Input tokens were similar (about 15,000–17,000 per question at the 6,000-token cap); a tighter cap would cut them. Cost per search: $0.005 versus $0.01 plus similar tokens.
