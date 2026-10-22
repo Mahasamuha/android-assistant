@@ -1,6 +1,5 @@
 package com.mahasamuha.assistant.llm
 
-import com.mahasamuha.assistant.voice.ApproximateLocation
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONObject
 
@@ -51,11 +50,7 @@ data class ChatOptions(
      * Costs about 0.5–2 s before the first word on plain and search answers (docs/phase3-notes.md).
      */
     val reasoningEffort: String = "low",
-    val webSearch: Boolean = true,
     val tools: List<ToolDefinition> = emptyList(),
-    /** Approximate location for web search: IANA time zone, plus city/region/country when known. */
-    val timeZone: String? = null,
-    val location: ApproximateLocation? = null,
 )
 
 sealed interface ChatEvent {
@@ -64,20 +59,9 @@ sealed interface ChatEvent {
     /** Emitted once, at the end of a response that asks for tools. */
     data class ToolCalls(val calls: List<ToolCall>) : ChatEvent
 
-    /**
-     * Emitted last: what to keep in [ChatMessage.replay] for this response, and its web sources (shown with
-     * the answer; Anthropic requires sources alongside search answers shown to users). [sourcesCited] says
-     * whether they are the pages the answer cited, or only everything its searches returned.
-     */
-    data class Finished(
-        val replay: List<JSONObject>,
-        val sources: List<SourceLink> = emptyList(),
-        val sourcesCited: Boolean = false,
-    ) : ChatEvent
+    /** Emitted last: what to keep in [ChatMessage.replay] for this response. */
+    data class Finished(val replay: List<JSONObject>) : ChatEvent
 }
-
-/** A web page a search returned. */
-data class SourceLink(val title: String, val url: String)
 
 /** The LLM endpoint. Implementations stream events and fail with [ChatException]. */
 interface ChatClient {

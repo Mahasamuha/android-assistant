@@ -82,3 +82,10 @@ End to end through Bifrost with the app's prompt, `web_search` as a function too
 | Artemis news | 5.0 s, plus a quoted headline | 4.8 s, right | 2.4 s, right |
 
 Brave `llm/context` was right on all four, never quoted source text (no citation blocks exist on this path), and was as fast or faster despite the extra model round. Input tokens were similar (about 15,000–17,000 per question at the 6,000-token cap); a tighter cap would cut them. Cost per search: $0.005 versus $0.01 plus similar tokens.
+
+## Step 4 built: MCP server and remote web search (2026-10-22)
+
+- `mcp/`: TypeScript, official MCP SDK (1.32.1), Streamable HTTP in stateless mode with plain-JSON responses (`sessionIdGenerator: undefined`, `enableJsonResponse: true`), a fresh server per request. One tool, `web_search(query)` (read-only), calling Brave `llm/context` and returning `{results: [{title, url, date, text}]}`. Brave returns about 30 pages, many with a fragment of text; taking all of them until a character budget filled gave 37 tiny results. Now the top 8 pages, each with an equal share of 24,000 characters: about 900–2,200 tokens per search in practice, with the figures asked for on the top page. A Brave call takes about 1.4–2 s.
+- Deploy: an `mcp` service on the private `backend` network, no published port, `BRAVE_API_KEY` from `deploy/.env`.
+- Gateway: `POST /mcp` (same token check and rate limit), forwarded with no key; `accept` and `mcp-protocol-version` pass through. The route table now maps each allowed path to its upstream. `GET`/`DELETE /mcp` are 404 (no sessions or event streams in stateless mode).
+- Phone: `McpClient` (about 150 lines; `tools/list`, `tools/call`; no `initialize`, since a stateless server can't remember it). Remote tools load while the user speaks and join the registry (remote overrides local by name); read-only ones run directly, others get a phone-built Ask. Anthropic's server-side search and its citation handling are gone from the chat client; the sources pill now reads `web_search` results and attaches to the answer bubble after the search.

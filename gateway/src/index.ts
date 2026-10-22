@@ -5,7 +5,7 @@ import { ResponseCapture } from "./capture.js";
 import { loadConfig } from "./config.js";
 import { HttpError } from "./errors.js";
 import { BodyLog, DebugSwitch, log } from "./logging.js";
-import { forwardInference } from "./proxy.js";
+import { forward, type Upstream } from "./proxy.js";
 import { RateLimiter } from "./rateLimit.js";
 
 const config = loadConfig();
@@ -15,9 +15,17 @@ const debug = new DebugSwitch(config.debugDurationMs);
 const bodyLog = new BodyLog(config.logDir, config.logBodyRetentionMs, debug, config.debugDurationMs);
 await bodyLog.init();
 
-// The only routes: GET /healthz and the inference routes below, each forwarded to the same path upstream.
+// The only routes: GET /healthz and the POST routes below, each forwarded to its private upstream.
 // Everything else is 404. Routes are added deliberately and recorded in docs/plan.md.
-const INFERENCE_ROUTES = new Set(["/v1/responses"]);
+const ROUTES: Record<string, () => Upstream | undefined> = {
+  // The LLM gateway, with the phone's virtual key attached here.
+  "/v1/responses": () => ({
+    url: `${config.upstreamUrl}/v1/responses`,
+    headers: { authorization: `Bearer ${config.upstreamVirtualKey}` },
+  }),
+  // The MCP server (remote tools). No key: it is reachable only from here.
+  "/mcp": () => (config.mcpUrl ? { url: `${config.mcpUrl}/mcp`, headers: {} } : undefined),
+};
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const requestId = randomUUID();
@@ -34,7 +42,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   let request: unknown;
   let capture: ResponseCapture | undefined;
   try {
-    if (req.method !== "POST" || !INFERENCE_ROUTES.has(pathname)) throw new HttpError(404, "Not found");
+    const upstream = req.method === "POST" ? ROUTES[pathname]?.() : undefined;
+    if (!upstream) throw new HttpError(404, "Not found");
 
     subject = (await verifier.verify(req.headers.authorization)).subject;
 
@@ -45,7 +54,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     request = parseJsonObject(body);
 
     if (bodyLog.enabled) capture = new ResponseCapture();
-    status = await forwardInference(config, pathname, requestId, body, res, capture);
+    status = await forward(upstream, req, requestId, body, res, capture);
   } catch (e) {
     status = e instanceof HttpError ? e.status : 500;
     if (!(e instanceof HttpError)) log("unhandled_error", { requestId, error: e instanceof Error ? e.stack : String(e) });

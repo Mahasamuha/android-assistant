@@ -18,6 +18,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.async
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
@@ -55,10 +56,13 @@ class AssistantSession(context: Context) :
             stt = PlatformSpeechToText(context),
             chat = app.chatClient,
             // From the session's own context while the panel is up; Android 17 blocks background launches.
-            tools = app.sessionTools(
-                launch = { intent -> context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
-                closePanel = { finish() },
-            ),
+            // Loads while the user speaks; the remote list comes from the MCP server.
+            toolsLoading = lifecycleScope.async {
+                app.sessionTools(
+                    launch = { intent -> context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
+                    closePanel = { finish() },
+                )
+            },
             skills = app.skills,
             speaker = speaker,
             locationSource = app.locationSource,

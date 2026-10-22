@@ -38,7 +38,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import com.mahasamuha.assistant.llm.SourceLink
 import androidx.compose.ui.unit.dp
 import com.mahasamuha.assistant.tools.Confirmation
 import com.mahasamuha.assistant.ui.AppTheme
@@ -155,7 +154,7 @@ private fun Transcript(state: PanelState, onOpenSource: (String) -> Unit, modifi
                     Bubble(message.text, message.fromUser, sources = message.sources.size, onSources = {
                         openSources = if (openSources == index) null else index
                     })
-                    if (openSources == index) SourceList(message.sources, message.sourcesCited, onOpenSource)
+                    if (openSources == index) SourceList(message.sources, onOpenSource)
                 }
             }
         }
@@ -212,14 +211,14 @@ private fun SourcesPill(count: Int, onClick: () -> Unit, modifier: Modifier = Mo
 
 /** A reply's sources in an inset well under the bubble; tapping one opens it in the browser. */
 @Composable
-private fun SourceList(sources: List<SourceLink>, cited: Boolean, onOpen: (String) -> Unit) {
+private fun SourceList(sources: List<SourceLink>, onOpen: (String) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth(0.92f)
             .background(AppTheme.colors.inset, RoundedCornerShape(10.dp))
             .padding(vertical = 8.dp),
     ) {
-        MonoLabel(if (cited) "sources" else "search results", Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
+        MonoLabel("sources", Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
         sources.forEach { source ->
             Column(
                 modifier = Modifier

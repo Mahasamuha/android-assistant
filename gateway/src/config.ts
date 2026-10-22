@@ -10,6 +10,8 @@ export interface Config {
   /** Base URL of the LLM gateway; the allowlisted inference path (e.g. `/v1/responses`) is appended. */
   upstreamUrl: string;
   upstreamVirtualKey: string;
+  /** Base URL of the MCP server (remote tools); `/mcp` is appended. If unset, the route is 404. */
+  mcpUrl: string | undefined;
   rateLimit: {
     perMinute: number;
     burst: number;
@@ -29,6 +31,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     audience: required(env, "AUDIENCE"),
     upstreamUrl: url(env, "UPSTREAM_URL").replace(/\/+$/, ""),
     upstreamVirtualKey: required(env, "UPSTREAM_VIRTUAL_KEY"),
+    mcpUrl: env.MCP_URL ? url(env, "MCP_URL").replace(/\/+$/, "") : undefined,
     rateLimit: {
       perMinute: integer(env, "RATE_LIMIT_PER_MINUTE", 20),
       burst: integer(env, "RATE_LIMIT_BURST", 5),

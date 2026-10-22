@@ -13,6 +13,8 @@ import com.mahasamuha.assistant.contacts.ContactDirectory
 import com.mahasamuha.assistant.contacts.FindContactTool
 import com.mahasamuha.assistant.llm.ChatClient
 import com.mahasamuha.assistant.llm.GatewayChatClient
+import com.mahasamuha.assistant.remote.McpClient
+import com.mahasamuha.assistant.remote.RemoteTools
 import com.mahasamuha.assistant.skills.BundledSkills
 import com.mahasamuha.assistant.sms.SendSmsTool
 import com.mahasamuha.assistant.sms.SmsSender
@@ -32,16 +34,17 @@ class AssistantApp : Application() {
     private val weatherTool by lazy { WeatherTool(OpenMeteoWeather(), locationSource) }
     private val contacts by lazy { ContactDirectory(contentResolver, resources) }
     private val smsSender by lazy { SmsSender(this) }
+    private val remoteTools by lazy { RemoteTools(McpClient(config.gatewayUrls, auth)) }
 
     /**
      * Tools for one session: those whose permissions are granted right now, so a skill that needs a
      * missing one is left out (plan §4b). A remote tool with the same name will override a local one.
      * [launch] starts an activity from the session, which must happen while it's visible; [closePanel]
-     * dismisses the session (after a call is placed).
+     * dismisses the session (after a call is placed). Remote tools come from the MCP server (plan §4b).
      */
-    fun sessionTools(launch: (Intent) -> Unit, closePanel: () -> Unit): ToolRegistry {
+    suspend fun sessionTools(launch: (Intent) -> Unit, closePanel: () -> Unit): ToolRegistry {
         val contactsAllowed = granted(Manifest.permission.READ_CONTACTS)
-        return ToolRegistry(buildList {
+        val local = buildList {
             add(weatherTool)
             if (contactsAllowed) add(FindContactTool(contacts))
             if (granted(Manifest.permission.SEND_SMS)) add(SendSmsTool(smsSender, contacts.takeIf { contactsAllowed }))
@@ -54,7 +57,10 @@ class AssistantApp : Application() {
                     closePanel,
                 ))
             }
-        })
+        }
+        val remote = remoteTools.load()
+        val remoteNames = remote.map { it.definition.name }.toSet()
+        return ToolRegistry(local.filter { it.definition.name !in remoteNames } + remote)
     }
 
     private fun granted(permission: String) = checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED

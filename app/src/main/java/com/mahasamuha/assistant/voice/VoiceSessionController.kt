@@ -11,15 +11,14 @@ import com.mahasamuha.assistant.llm.ChatException
 import com.mahasamuha.assistant.llm.ChatMessage
 import com.mahasamuha.assistant.llm.ChatMessage.Role
 import com.mahasamuha.assistant.llm.ChatOptions
-import com.mahasamuha.assistant.llm.SourceLink
 import com.mahasamuha.assistant.llm.ToolCall
 import com.mahasamuha.assistant.skills.Skill
 import com.mahasamuha.assistant.tools.Confirmation
 import com.mahasamuha.assistant.tools.ConfirmationResult
 import com.mahasamuha.assistant.tools.ToolRegistry
-import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -30,6 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
+import org.json.JSONException
 import org.json.JSONObject
 
 data class PanelState(
@@ -47,16 +47,33 @@ data class PanelState(
 
 /**
  * A chat bubble, or with [note] a small label between bubbles (e.g. "no reply heard"). [sources] are the
- * pages a web search behind this reply found.
+ * pages a web search behind this reply returned.
  */
 data class PanelMessage(
     val fromUser: Boolean,
     val text: String,
     val note: Boolean = false,
     val sources: List<SourceLink> = emptyList(),
-    /** True when [sources] are the pages the reply cited; false when they are all of its search results. */
-    val sourcesCited: Boolean = false,
 )
+
+/** A web page behind a reply, shown with it (search providers expect sources alongside answers). */
+data class SourceLink(val title: String, val url: String) {
+    companion object {
+        /** The pages in a `web_search` result (`{"results": [{title, url, …}]}`); empty for any other result. */
+        fun fromSearchResult(result: String): List<SourceLink> {
+            val results = try {
+                JSONObject(result).optJSONArray("results")
+            } catch (e: JSONException) {
+                null
+            } ?: return emptyList()
+            return (0 until results.length()).mapNotNull { i ->
+                val page = results.optJSONObject(i) ?: return@mapNotNull null
+                val url = page.optString("url").takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: return@mapNotNull null
+                SourceLink(page.optString("title").ifBlank { url }, url)
+            }
+        }
+    }
+}
 
 /** A problem the user can act on; the message is spoken as is. */
 private class UserFacingException(message: String) : Exception(message)
@@ -69,8 +86,8 @@ class VoiceSessionController(
     private val scope: CoroutineScope,
     private val stt: SpeechToText,
     private val chat: ChatClient,
-    private val tools: ToolRegistry,
-    skills: List<Skill>,
+    private val toolsLoading: Deferred<ToolRegistry>,
+    private val skills: List<Skill>,
     private val speaker: Speaker,
     private val locationSource: LocationSource,
     private val auth: AuthManager,
@@ -82,10 +99,9 @@ class VoiceSessionController(
 
     private val history = mutableListOf<ChatMessage>()
 
-    // A skill is only used when every tool it relies on is registered (plan §4b).
-    private val activeSkills = skills.filter { skill -> skill.tools.all { it in tools.names } }.also { active ->
-        Log.i(TAG, "Skills: ${active.joinToString { it.name }.ifEmpty { "none" }} (of ${skills.size})")
-    }
+    // Known from the first turn on: remote tools load while the user speaks.
+    private lateinit var tools: ToolRegistry
+    private var activeSkills = emptyList<Skill>()
     private var turn: Job? = null
 
     // Completed by a Confirm/Cancel tap while an action is being confirmed or announced.
@@ -132,13 +148,19 @@ class VoiceSessionController(
             addMessage(fromUser = true, heard)
 
             val place = location.await()
-            if (history.isEmpty()) history += ChatMessage(Role.SYSTEM, VoicePrompt.system(activeSkills, place))
+            if (history.isEmpty()) {
+                tools = toolsLoading.await()
+                // A skill is only used when every tool it relies on is registered (plan §4b).
+                activeSkills = skills.filter { skill -> skill.tools.all { it in tools.names } }
+                Log.i(TAG, "Tools: ${tools.names.sorted().joinToString()}; skills: ${activeSkills.joinToString { it.name }.ifEmpty { "none" }} (of ${skills.size})")
+                history += ChatMessage(Role.SYSTEM, VoicePrompt.system(activeSkills, place))
+            }
             val turnStart = history.size
             history += ChatMessage(Role.USER, heard)
             _state.update { it.copy(phase = PanelState.Phase.Thinking) }
 
             val reply = try {
-                respond(place)
+                respond()
             } catch (e: Exception) {
                 // Keep history to completed exchanges.
                 while (history.size > turnStart) history.removeAt(history.lastIndex)
@@ -189,16 +211,16 @@ class VoiceSessionController(
      * including a short "Let me check" before a tool call, and shown as its own bubble. Appends to
      * history; returns all spoken text.
      */
-    private suspend fun respond(place: ApproximateLocation?): String {
-        val options = ChatOptions(tools = tools.definitions, timeZone = ZoneId.systemDefault().id, location = place)
+    private suspend fun respond(): String {
+        val options = ChatOptions(tools = tools.definitions)
         val spoken = StringBuilder()
+        // Pages from this turn's searches, shown with the next reply bubble (the answer after the search).
+        var sources = emptyList<SourceLink>()
         repeat(MAX_ROUNDS) {
             val splitter = SentenceSplitter()
             val text = StringBuilder()
             var calls = emptyList<ToolCall>()
             var replay = emptyList<JSONObject>()
-            var sources = emptyList<SourceLink>()
-            var sourcesCited = false
             var bubble: Int? = null // this round's reply bubble in the transcript
             chat.stream(history.toList(), options).collect { event ->
                 when (event) {
@@ -218,11 +240,7 @@ class VoiceSessionController(
                         for (sentence in splitter.add(event.delta)) speakSentence(sentence)
                     }
                     is ChatEvent.ToolCalls -> calls = event.calls
-                    is ChatEvent.Finished -> {
-                        replay = event.replay
-                        sources = event.sources
-                        sourcesCited = event.sourcesCited
-                    }
+                    is ChatEvent.Finished -> replay = event.replay
                 }
             }
             splitter.flush()?.let { speakSentence(it) }
@@ -230,15 +248,19 @@ class VoiceSessionController(
 
             history += ChatMessage(Role.ASSISTANT, text.toString().ifEmpty { null }, toolCalls = calls, replay = replay)
             bubble?.takeIf { sources.isNotEmpty() }?.let { index ->
+                val shown = sources
                 _state.update { state ->
-                    state.copy(transcript = state.transcript.mapIndexed { i, m -> if (i == index) m.copy(sources = sources, sourcesCited = sourcesCited) else m })
+                    state.copy(transcript = state.transcript.mapIndexed { i, m -> if (i == index) m.copy(sources = shown) else m })
                 }
+                sources = emptyList()
             }
             if (calls.isEmpty()) return spoken.toString().trim()
 
             for (call in calls) {
                 _state.update { it.copy(phase = PanelState.Phase.Thinking) }
-                history += ChatMessage(Role.TOOL, tools.execute(call, ::confirm), toolCallId = call.id)
+                val result = tools.execute(call, ::confirm)
+                sources = (sources + SourceLink.fromSearchResult(result)).distinctBy { it.url }
+                history += ChatMessage(Role.TOOL, result, toolCallId = call.id)
             }
         }
         throw IllegalStateException("No answer after $MAX_ROUNDS model rounds")

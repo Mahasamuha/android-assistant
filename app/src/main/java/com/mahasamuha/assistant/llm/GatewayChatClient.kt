@@ -17,10 +17,10 @@ import org.json.JSONException
 import org.json.JSONObject
 
 /**
- * The OpenAI Responses API (`/v1/responses`), streamed through the auth gateway, with function tools and
- * Anthropic's web search server tool (passed through by the LLM gateway). Chosen over chat completions
- * because its output is typed: searches arrive as items that can be sent back, so follow-ups see what was
- * searched, and citations are annotations rather than text (docs/phase3-notes.md).
+ * The OpenAI Responses API (`/v1/responses`), streamed through the auth gateway, with function tools. Its
+ * output is typed: each response's items are sent back verbatim as history (docs/phase3-notes.md). Web
+ * search is one of our tools (the MCP server's `web_search`), not the provider's, so nothing here is
+ * provider-specific.
  */
 class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthManager) : ChatClient {
 
@@ -49,10 +49,9 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
                 }
                 // Items are collected as each one finishes: in a streamed search, the LLM gateway's final
                 // response.completed omits the web_search_call items (docs/phase3-notes.md).
+                // Items are collected as each one finishes rather than from response.completed, which the LLM
+                // gateway has been seen to leave incomplete in a stream (docs/phase3-notes.md).
                 val items = mutableListOf<JSONObject>()
-                // Citations arrive as their own events (message items carry none), also when the answer
-                // draws on an earlier turn's search.
-                val cited = mutableListOf<SourceLink>()
                 var completed = false
                 connection.inputStream.bufferedReader().useLines { lines ->
                     for (line in lines) {
@@ -61,7 +60,6 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
                         when (event.optString("type")) {
                             "response.output_text.delta" -> event.optString("delta").takeIf { it.isNotEmpty() }?.let { send(ChatEvent.Text(it)) }
                             "response.output_item.done" -> event.optJSONObject("item")?.let(items::add)
-                            "response.output_text.annotation.added" -> event.optJSONObject("annotation")?.let(::sourceLink)?.let(cited::add)
                             // Incomplete means a limit was hit (e.g. max tokens): keep what arrived.
                             "response.completed", "response.incomplete" -> completed = true
                             "response.failed", "error" -> throw ChatException.Unavailable("Response failed: ${event.toString().take(300)}")
@@ -76,8 +74,7 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
                 val calls = kept.filter { it.optString("type") == "function_call" }
                     .map { ToolCall(it.getString("call_id"), it.getString("name"), it.optString("arguments")) }
                 if (calls.isNotEmpty()) send(ChatEvent.ToolCalls(calls))
-                val sources = cited.distinctBy { it.url }
-                send(ChatEvent.Finished(kept, sources.ifEmpty { searchResults(kept) }, sourcesCited = sources.isNotEmpty()))
+                send(ChatEvent.Finished(kept))
                 close()
             } catch (e: ChatException) {
                 close(e)
@@ -106,18 +103,6 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
                 .put("description", tool.description)
                 .put("parameters", tool.inputSchema))
         }
-        if (options.webSearch) {
-            val search = JSONObject().put("type", "web_search_20250305").put("name", "web_search").put("max_uses", 2)
-            val userLocation = JSONObject().put("type", "approximate")
-            options.timeZone?.let { userLocation.put("timezone", it) }
-            options.location?.let { place ->
-                place.city?.let { userLocation.put("city", it) }
-                place.region?.let { userLocation.put("region", it) }
-                place.countryCode?.let { userLocation.put("country", it) }
-            }
-            if (userLocation.length() > 1) search.put("user_location", userLocation)
-            tools.put(search)
-        }
         if (tools.length() > 0) body.put("tools", tools)
         return body
     }
@@ -138,21 +123,6 @@ class GatewayChatClient(private val gateways: List<Uri>, private val auth: AuthM
                 }
             }
         }
-    }
-
-    /** Every page this response's searches returned, in order: the fallback when the answer cited nothing. */
-    private fun searchResults(items: List<JSONObject>): List<SourceLink> = items
-        .filter { it.optString("type") == "web_search_call" }
-        .flatMap { item ->
-            val sources = item.optJSONObject("action")?.optJSONArray("sources") ?: JSONArray()
-            (0 until sources.length()).mapNotNull { i -> sources.optJSONObject(i)?.let(::sourceLink) }
-        }
-        .distinctBy { it.url }
-
-    /** A `url_citation` annotation or a search source, as a link; null without a web URL. */
-    private fun sourceLink(json: JSONObject): SourceLink? {
-        val url = json.optString("url").takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: return null
-        return SourceLink(json.optString("title").ifBlank { Uri.parse(url).host.orEmpty() }, url)
     }
 
     private fun event(payload: String): JSONObject? = try {

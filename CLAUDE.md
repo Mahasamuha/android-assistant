@@ -9,6 +9,7 @@ The full design and its rationale are in `docs/plan.md`. Read it before making a
 ```
 app/       Android app — Kotlin, Jetpack Compose, Gradle (Kotlin DSL)
 gateway/   Auth gateway — TypeScript on Node, pnpm
+mcp/       MCP server for remote tools (web search) — TypeScript on Node, pnpm
 deploy/    Server-side config: compose files for gateway + Bifrost, reverse proxy snippets, env templates (placeholders only)
 docs/      plan.md and any design notes
 skills/    SKILL.md instruction bundles (plan §4b); bundled into the app (delivery: app) or served as drafts (delivery: server)
@@ -18,13 +19,13 @@ These are independent build units. Don't introduce a monorepo tool unless one is
 
 ## Architecture in one paragraph
 
-The phone holds the default assistant role (`VoiceInteractionService`). A gesture opens a session panel. The phone does on-device STT, then sends an OpenAI Responses API request with an Authentik-issued bearer token to the public auth gateway. The gateway validates the JWT (JWKS signature, iss, aud, exp), rate-limits, attaches the phone's Bifrost virtual key, and streams the request to Bifrost. Bifrost is on a private network only; it enforces budget and model allowlist and talks to Anthropic. Tool calls come back to the phone and run there: contacts lookup, calls, SMS. The answer is spoken with on-device TTS.
+The phone holds the default assistant role (`VoiceInteractionService`). A gesture opens a session panel. The phone does on-device STT, then sends an OpenAI Responses API request with an Authentik-issued bearer token to the public auth gateway. The gateway validates the JWT (JWKS signature, iss, aud, exp), rate-limits, attaches the phone's Bifrost virtual key, and streams the request to Bifrost. Bifrost is on a private network only; it enforces budget and model allowlist and talks to Anthropic. Tool calls come back to the phone and run there: contacts lookup, calls, SMS, weather. Remote tools (web search, backed by the Brave Search API) are served by an MCP server on the same private network, reached through the gateway's `/mcp` route; the phone still runs the tool loop. The answer is spoken with on-device TTS.
 
 ## Non-negotiables
 
 - No provider API keys or Bifrost keys on the phone. The app holds only issuer URL, client ID, and gateway base URL(s).
 - Bifrost is never internet-reachable. Only the auth gateway is exposed.
-- The gateway keeps its public surface minimal: an explicit allowlist of routes, each added deliberately and recorded in the plan, all requiring a valid token except the health check. Everything else returns 404. Today the allowlist is `POST /v1/responses` and `GET /healthz`.
+- The gateway keeps its public surface minimal: an explicit allowlist of routes, each added deliberately and recorded in the plan, all requiring a valid token except the health check. Everything else returns 404. Today the allowlist is `POST /v1/responses`, `POST /mcp`, and `GET /healthz`.
 - The gateway streams responses through without buffering (SSE pass-through) and forwards only `content-type` from upstream. Bifrost must keep `extra_fields_placement: "headers"`, or its response bodies leak provider account IDs (`docs/phase2-notes.md`).
 - Side effects follow the confirmation policy in plan §2: SMS always confirmed; calls announced, and confirmed only when the contact match is ambiguous.
 - STT, TTS, and the LLM endpoint each sit behind an interface so implementations can be swapped.
@@ -96,6 +97,7 @@ Install via `adb` or Android Studio. ADB installs are exempt from developer veri
 ### Phase 2 (server half) — preview, don't start unprompted
 
 - `gateway/`: JWT validation, route allowlist, rate limit, virtual-key injection, SSE pass-through, debug-logging toggle with a ~30-minute auto-off.
+- (Added in phase 3) `mcp/`: the MCP server for remote tools (plan §4b step 4), stateless, plain-JSON Streamable HTTP, reached only through the gateway.
 - `deploy/`: compose for gateway + Bifrost on a private network (real values in gitignored `deploy/local/` or `.env`), Bifrost config with a budgeted virtual key restricted to a small Anthropic model, and a reverse-proxy route to the gateway only.
 - Authentik: a public client with PKCE and a dedicated audience. This is manual setup in Authentik; document the steps rather than automating them.
 

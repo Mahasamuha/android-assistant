@@ -1,16 +1,17 @@
-# Deploy: auth gateway + Bifrost
+# Deploy: auth gateway + Bifrost + MCP server
 
-Two containers on one private network. Only the gateway publishes a port, and only to the address in `GATEWAY_BIND` (loopback by default), so the reverse proxy is its only way in. Bifrost publishes nothing.
+Three containers on one private network. Only the gateway publishes a port, and only to the address in `GATEWAY_BIND` (loopback by default), so the reverse proxy is its only way in. Bifrost and the MCP server publish nothing.
 
 ```
-phone ──HTTPS──▶ reverse proxy ──▶ gateway (:8080 in container) ──▶ bifrost:8080 ──▶ Anthropic
+phone ──HTTPS──▶ reverse proxy ──▶ gateway (:8080 in container) ──┬─ /v1/responses ─▶ bifrost:8080 ──▶ Anthropic
+                                                                   └─ /mcp ─────────▶ mcp:8080 ─────▶ Brave Search API
 ```
 
 ## Files
 
 | Tracked | Real copy (gitignored) | Contents |
 |---|---|---|
-| `.env.example` | `.env` | `GATEWAY_BIND` (host address and port for the reverse proxy) |
+| `.env.example` | `.env` | `GATEWAY_BIND` (host address and port for the reverse proxy), `BRAVE_API_KEY` (the MCP server's web search) |
 | `gateway.env.example` | `local/gateway.env` | Issuer, audience, virtual key, rate limits, body-log retention |
 | `bifrost.env.example` | `local/bifrost.env` | Anthropic API key, virtual key |
 | `bifrost/config.example.json` | `local/bifrost-config.json` | Bifrost config: provider key, virtual key name, model allowlist, budget |
@@ -57,7 +58,7 @@ Proxy host in Nginx Proxy Manager:
 | SSL | Request a certificate; Force SSL on; HTTP/2 on |
 | Advanced | Nothing needed. The gateway sends `X-Accel-Buffering: no` on streams so nginx doesn't buffer them, and nginx's defaults (60 s read timeout, 1 MB body limit) fit. |
 
-Forwarding every path is fine: the gateway returns 404 for anything but its route allowlist (`POST /v1/responses`, `GET /healthz`; plan §2). Per-IP rate limiting, if wanted, belongs at the proxy; the gateway limits per token subject.
+Forwarding every path is fine: the gateway returns 404 for anything but its route allowlist (`POST /v1/responses`, `POST /mcp`, `GET /healthz`; plan §2). Per-IP rate limiting, if wanted, belongs at the proxy; the gateway limits per token subject.
 
 Check it from outside once it's up: `curl https://<gateway-host>/healthz` returns `{"status":"ok"}`, and `curl -X POST https://<gateway-host>/v1/responses` returns 401.
 

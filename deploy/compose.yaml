@@ -1,4 +1,4 @@
-# Auth gateway + Bifrost. Real values live in deploy/local/ and deploy/.env (both gitignored);
+# Auth gateway + Bifrost + MCP server. Real values live in deploy/local/ and deploy/.env (both gitignored);
 # see README.md for setup.
 name: assistant
 
@@ -10,6 +10,7 @@ services:
     env_file: local/gateway.env
     environment:
       UPSTREAM_URL: http://bifrost:8080
+      MCP_URL: http://mcp:8080
       PORT: "8080"
     ports:
       # Only the reverse proxy should reach the gateway. Keep it on loopback unless the proxy runs elsewhere.
@@ -18,6 +19,19 @@ services:
       - gateway-logs:/app/logs
     depends_on:
       - bifrost
+      - mcp
+    networks:
+      - backend
+
+  # Remote tools (plan §4b step 4). Like Bifrost: no ports, reachable only from the gateway; needs
+  # outbound access for the search API.
+  mcp:
+    build: ../mcp
+    image: assistant-mcp
+    restart: unless-stopped
+    environment:
+      BRAVE_API_KEY: ${BRAVE_API_KEY:?set BRAVE_API_KEY in deploy/.env}
+      PORT: "8080"
     networks:
       - backend
 

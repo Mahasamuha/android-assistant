@@ -1,21 +1,28 @@
 import { once } from "node:events";
-import type { ServerResponse } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ResponseCapture } from "./capture.js";
-import type { Config } from "./config.js";
 import { HttpError } from "./errors.js";
 import { log } from "./logging.js";
 
 /** Status recorded when the client disconnects before the response completes. */
 export const CLIENT_CLOSED = 499;
 
+/** Where an allowlisted route goes, with any headers the gateway adds (e.g. the LLM gateway's key). */
+export interface Upstream {
+  url: string;
+  headers: Record<string, string>;
+}
+
+/** Request headers passed through from the phone; everything else (notably its token) stays here. */
+const FORWARDED_REQUEST_HEADERS = ["accept", "mcp-protocol-version"] as const;
+
 /**
- * Forwards an inference request (an allowlisted path) to the same path upstream with the gateway's virtual
- * key, and streams the response back byte for byte. Only content-type is forwarded from upstream: the LLM
- * gateway's own headers stay here.
+ * Forwards a request to its upstream and streams the response back byte for byte. Only content-type is
+ * forwarded from upstream: upstream services' own headers stay here.
  */
-export async function forwardInference(
-  config: Config,
-  path: string,
+export async function forward(
+  upstreamTarget: Upstream,
+  req: IncomingMessage,
   requestId: string,
   body: Buffer<ArrayBuffer>,
   res: ServerResponse,
@@ -29,22 +36,25 @@ export async function forwardInference(
   try {
     let upstream: Response;
     try {
-      upstream = await fetch(`${config.upstreamUrl}${path}`, {
+      const passed = Object.fromEntries(
+        FORWARDED_REQUEST_HEADERS.flatMap((name) => (typeof req.headers[name] === "string" ? [[name, req.headers[name]]] : [])),
+      );
+      upstream = await fetch(upstreamTarget.url, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${config.upstreamVirtualKey}` },
+        headers: { ...passed, "content-type": "application/json", ...upstreamTarget.headers },
         body,
         signal: abort.signal,
       });
     } catch (e) {
       if (abort.signal.aborted) return CLIENT_CLOSED;
       log("upstream_unreachable", { requestId, error: String(e) });
-      throw new HttpError(502, "LLM gateway unavailable");
+      throw new HttpError(502, "Upstream unavailable");
     }
 
     // Upstream auth failures are a server misconfiguration. Passed through, the phone would read them as its own token being rejected.
     if (upstream.status === 401 || upstream.status === 403) {
       log("upstream_rejected_gateway", { requestId, status: upstream.status, body: (await upstream.text()).slice(0, 500) });
-      throw new HttpError(502, "LLM gateway rejected the request");
+      throw new HttpError(502, "Upstream rejected the request");
     }
 
     const contentType = upstream.headers.get("content-type") ?? "application/json";
