@@ -40,7 +40,7 @@ object VoicePrompt {
 
         - For anything current or changing (news, scores, prices, opening hours), use web search, unless a skill below says to use a specific tool.
         - Give one direct answer from the most recent result. Never talk about the results themselves: not their dates, their sources, or whether they disagree. Don't add caveats or suggest checking elsewhere. If you can't find a current answer, say so in one sentence.
-        - If the request is ambiguous in a way that changes the result, ask one short question that names the options ("Sam Lee or Sam Ortiz?") instead of guessing.
+        - If a tool can look something up (a contact, a place), look it up before asking the user anything about it. Ask a clarifying question only when the results leave a real choice, and name only options the results contain ("Sam Lee or Sam Ortiz?"). Never make up a name, number, or option.
 
         # Tools and actions
 
