@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.telecom.TelecomManager
 import android.telephony.TelephonyManager
 import com.mahasamuha.assistant.contacts.ContactDirectory
+import com.mahasamuha.assistant.contacts.PhoneNumber
 import com.mahasamuha.assistant.llm.ToolAnnotations
 import com.mahasamuha.assistant.llm.ToolDefinition
 import com.mahasamuha.assistant.tools.ActionTool
@@ -17,8 +18,9 @@ import org.json.JSONObject
 
 /**
  * `place_call`: announced when the phone's own contacts agree on who it is, asked first otherwise
- * (plan §2). The model picks the contact; this only checks that its pick holds up, so a number that
- * doesn't belong to the named contact can never be dialed on an announcement alone.
+ * (plan §2). The model picks the contact; this only checks that its pick holds up, and an announced
+ * call dials the contact's saved number, never the model's text. The registry turns an announcement
+ * into a question once the session has read outside content (search results).
  *
  * Calls go through [TelecomManager.placeCall], not an ACTION_CALL activity: with more than one app
  * handling ACTION_CALL, the activity resolved to a chooser that opened behind the panel (on-device
@@ -36,8 +38,7 @@ class PlaceCallTool(
 
     override val definition = ToolDefinition(
         name = "place_call",
-        description = "Place a phone call from the user's phone. The phone announces the call, or asks the user " +
-            "first when the contact isn't certain.",
+        description = "Place a phone call from the user's phone. The phone announces the call or asks the user first.",
         inputSchema = JSONObject()
             .put("type", "object")
             .put("properties", JSONObject()
@@ -57,23 +58,29 @@ class PlaceCallTool(
     override suspend fun prepare(arguments: JSONObject): PendingAction {
         val number = arguments.optString("phone_number").trim()
         val name = arguments.optString("contact_name").trim()
-        require(number.count { it.isDigit() } >= 2) { "A phone number is required" }
+        require(ContactDirectory.isPhoneNumber(number, minDigits = 2)) { "A plain phone number is required: digits only, no codes or letters" }
 
         // Apps can't place emergency calls directly; open the default dialer with the number so the user presses call.
         if (telephony.isEmergencyNumber(number)) {
-            return PendingAction(Confirmation.Announce("Opening the dialer for $number.")) {
+            return PendingAction(Confirmation.Announce("Opening the dialer for $number.", "Open the dialer for $number?")) {
                 launch(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null)).setPackage(telecom.defaultDialerPackage))
                 closePanel()
                 JSONObject().put("status", "dialer_opened").put("note", "The user presses call in the dialer").toString()
             }
         }
 
-        // Certain: announce the contact the model named. Otherwise ask, naming everyone the number belongs to.
-        val confirmation = certainMatch(name, number)
-            ?.let { (contactName, label) -> Confirmation.Announce("Calling $contactName, ${label.lowercase()}.") }
+        // Certain: announce the contact the model named and dial its saved number. Otherwise ask, naming
+        // everyone the number belongs to.
+        val match = certainMatch(name, number)
+        val confirmation = match
+            ?.let { (contactName, saved) ->
+                val who = "$contactName, ${saved.label.lowercase()}"
+                Confirmation.Announce("Calling $who.", "Call $who?")
+            }
             ?: Confirmation.Ask("Call ${contacts?.describe(number) ?: ContactDirectory.formatNumber(number)}?")
+        val dialed = match?.second?.number ?: number
         return PendingAction(confirmation) {
-            placeCall(number)
+            placeCall(dialed)
             closePanel()
             JSONObject().put("status", "calling").toString()
         }
@@ -86,13 +93,13 @@ class PlaceCallTool(
     }
 
     /**
-     * The contact name and number type when certain: [name] matches exactly one contact, [number] is one
+     * The contact name and its saved number when certain: [name] matches exactly one contact, [number] is one
      * of its numbers, and no other number of that contact has the same type (plan §5a). Null otherwise.
      */
-    private suspend fun certainMatch(name: String, number: String): Pair<String, String>? {
+    private suspend fun certainMatch(name: String, number: String): Pair<String, PhoneNumber>? {
         if (contacts == null || name.isEmpty()) return null
         val contact = contacts.find(name).singleOrNull() ?: return null
         val chosen = contact.numbers.firstOrNull { ContactDirectory.sameNumber(it.number, number) } ?: return null
-        return if (contact.numbers.count { it.label == chosen.label } == 1) contact.name to chosen.label else null
+        return if (contact.numbers.count { it.label == chosen.label } == 1) contact.name to chosen else null
     }
 }

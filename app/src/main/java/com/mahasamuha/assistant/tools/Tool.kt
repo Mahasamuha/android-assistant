@@ -39,8 +39,11 @@ sealed interface Confirmation {
     /** Read back and wait for a yes ("Text Sam Lee: I'm running late. Send it?"). */
     data class Ask(override val text: String) : Confirmation
 
-    /** Say what's happening and go ahead unless cancelled ("Calling Mom, mobile"). */
-    data class Announce(override val text: String) : Confirmation
+    /**
+     * Say what's happening and go ahead unless cancelled ("Calling Mom, mobile"). Once the session has
+     * read outside content, the registry asks [question] instead ("Call Mom, mobile?").
+     */
+    data class Announce(override val text: String, val question: String) : Confirmation
 }
 
 sealed interface ConfirmationResult {
@@ -71,6 +74,12 @@ class ToolRegistry(tools: List<Tool>) {
 
     val names: Set<String> = byName.keys
 
+    /**
+     * Set once a read-only `openWorldHint` tool has run (web search, weather). Its results are text from
+     * outside the phone that may carry instructions, so from then on this session asks instead of announcing.
+     */
+    private var readOutsideContent = false
+
     /** Never throws (except cancellation): failures become an error result the model can explain. */
     suspend fun execute(call: ToolCall, confirmer: Confirmer): String {
         val tool = byName[call.name] ?: return error("Unknown tool ${call.name}")
@@ -81,10 +90,16 @@ class ToolRegistry(tools: List<Tool>) {
         }
         return try {
             when (tool) {
-                is ReadOnlyTool -> tool.run(arguments)
+                is ReadOnlyTool -> {
+                    if (tool.definition.annotations.openWorldHint) readOutsideContent = true
+                    tool.run(arguments)
+                }
                 is ActionTool -> {
                     val action = tool.prepare(arguments)
-                    when (val result = confirmer.confirm(action.confirmation)) {
+                    val confirmation = action.confirmation.let {
+                        if (it is Confirmation.Announce && readOutsideContent) Confirmation.Ask(it.question) else it
+                    }
+                    when (val result = confirmer.confirm(confirmation)) {
                         ConfirmationResult.Confirmed -> action.perform()
                         is ConfirmationResult.Declined -> notConfirmed(result.userSaid)
                     }

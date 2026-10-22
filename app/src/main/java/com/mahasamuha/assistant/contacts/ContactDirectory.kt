@@ -75,5 +75,15 @@ class ContactDirectory(private val resolver: ContentResolver, private val resour
 
         fun sameNumber(a: String, b: String): Boolean =
             PhoneNumberUtils.areSamePhoneNumber(a, b, Locale.getDefault().country.lowercase())
+
+        /**
+         * True for a plain number the model may pass to a call or text: digits, an optional leading +,
+         * and spaces, dots, dashes or parentheses. Rejects star codes (`*#06#`, `**21*…#` call
+         * forwarding), pauses and waits (`,` `;`), and letters.
+         */
+        fun isPhoneNumber(number: String, minDigits: Int): Boolean =
+            PLAIN_NUMBER.matches(number) && number.count { it.isDigit() } >= minDigits
+
+        private val PLAIN_NUMBER = Regex("""\+?[0-9 ().-]+""")
     }
 }

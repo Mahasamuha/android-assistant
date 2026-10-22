@@ -6,7 +6,8 @@ services:
   gateway:
     ports: !reset []
     networks:
-      - backend
+      - llm
+      - tools
       - proxy
 
 networks:

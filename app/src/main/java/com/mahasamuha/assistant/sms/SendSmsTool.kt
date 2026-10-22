@@ -39,7 +39,7 @@ class SendSmsTool(private val sender: SmsSender, private val contacts: ContactDi
     override suspend fun prepare(arguments: JSONObject): PendingAction {
         val number = arguments.optString("phone_number").trim()
         val message = arguments.optString("message").trim()
-        require(number.count { it.isDigit() } >= 3) { "A phone number is required" }
+        require(ContactDirectory.isPhoneNumber(number, minDigits = 3)) { "A plain phone number is required: digits only, no codes or letters" }
         require(message.isNotEmpty()) { "The message is empty" }
 
         val recipient = contacts?.describe(number) ?: ContactDirectory.formatNumber(number)

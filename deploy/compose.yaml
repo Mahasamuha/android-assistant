@@ -21,10 +21,12 @@ services:
       - bifrost
       - mcp
     networks:
-      - backend
+      - llm
+      - tools
 
   # Remote tools (plan §4b step 4). Like Bifrost: no ports, reachable only from the gateway; needs
-  # outbound access for the search API.
+  # outbound access for the search API. It reads untrusted web content, so it gets its own network
+  # (it can't reach Bifrost's admin API) and a locked-down container.
   mcp:
     build: ../mcp
     image: assistant-mcp
@@ -34,8 +36,14 @@ services:
       # Optional: with it, the server's get_weather (Pirate Weather) overrides the phone's Open-Meteo one.
       PIRATE_WEATHER_API_KEY: ${PIRATE_WEATHER_API_KEY:-}
       PORT: "8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     networks:
-      - backend
+      - tools
 
   bifrost:
     image: maximhq/bifrost:v2.3.1
@@ -47,10 +55,12 @@ services:
       - ./local/bifrost-config.json:/app/data/config.json:ro
     # No ports: Bifrost is reachable only from the gateway. Outbound access to the provider is still needed.
     networks:
-      - backend
+      - llm
 
+# Two networks so the gateway is the only container that reaches both Bifrost and the MCP server.
 networks:
-  backend: {}
+  llm: {}
+  tools: {}
 
 volumes:
   gateway-logs: {}
