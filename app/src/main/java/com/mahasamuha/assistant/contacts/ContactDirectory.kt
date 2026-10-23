@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.res.Resources
 import android.net.Uri
 import android.provider.ContactsContract.CommonDataKinds.Phone
+import android.provider.ContactsContract.CommonDataKinds.StructuredPostal
 import android.provider.ContactsContract.PhoneLookup
 import android.telephony.PhoneNumberUtils
 import java.util.Locale
@@ -13,6 +14,8 @@ import kotlinx.coroutines.withContext
 data class PhoneNumber(val number: String, val label: String)
 
 data class Contact(val name: String, val numbers: List<PhoneNumber>)
+
+data class PostalAddress(val address: String, val label: String)
 
 /**
  * How a read-back or announcement names a recipient, and the number that will be used. [description] is
@@ -47,6 +50,47 @@ class ContactDirectory(private val resolver: ContentResolver, private val resour
             }
         }
         byContact.values.take(limit).map { (name, numbers) -> Contact(name, numbers.values.toList()) }
+    }
+
+    /**
+     * Contacts whose name sounds like [heard], best first, for when [find] matches nothing because speech
+     * recognition misspelled an uncommon name. Kept: names scoring at least [SOUND_ALIKE_MIN] and within
+     * [SOUND_ALIKE_MARGIN] of the best, since the right name tends to stand clear of the rest. The whole list
+     * of names is read on the phone; only these candidates leave it.
+     */
+    suspend fun soundAlike(heard: String, limit: Int = 3): List<Contact> {
+        val names = withContext(Dispatchers.IO) {
+            buildSet {
+                resolver.query(Phone.CONTENT_URI, arrayOf(Phone.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    while (cursor.moveToNext()) cursor.getString(0)?.let(::add)
+                }
+            }
+        }
+        val scored = names.map { it to soundAlikeScore(heard, it) }.sortedByDescending { (_, score) -> score }
+        val best = scored.firstOrNull()?.second ?: return emptyList()
+        return scored
+            .filter { (_, score) -> score >= SOUND_ALIKE_MIN && score >= best - SOUND_ALIKE_MARGIN }
+            .take(limit)
+            .mapNotNull { (name, _) -> find(name).firstOrNull { it.name == name } }
+    }
+
+    /**
+     * The postal addresses saved for the contact named exactly [name] (a name find_contact returned),
+     * with their labels. The same address listed twice (e.g. from two accounts) appears once.
+     */
+    suspend fun addressesFor(name: String): List<PostalAddress> = withContext(Dispatchers.IO) {
+        val projection = arrayOf(StructuredPostal.FORMATTED_ADDRESS, StructuredPostal.TYPE, StructuredPostal.LABEL)
+        val selection = "${StructuredPostal.DISPLAY_NAME} = ?"
+        val byAddress = linkedMapOf<String, PostalAddress>()
+        resolver.query(StructuredPostal.CONTENT_URI, projection, selection, arrayOf(name), null)?.use { cursor ->
+            while (cursor.moveToNext()) {
+                // Formatted addresses span lines; a maps search wants one.
+                val address = cursor.getString(0)?.lines()?.joinToString(", ") { it.trim() }?.takeIf { it.isNotBlank() } ?: continue
+                val label = StructuredPostal.getTypeLabel(resources, cursor.getInt(1), cursor.getString(2)).toString()
+                byAddress.putIfAbsent(address, PostalAddress(address, label))
+            }
+        }
+        byAddress.values.toList()
     }
 
     /**
@@ -87,6 +131,11 @@ class ContactDirectory(private val resolver: ContentResolver, private val resour
     }
 
     companion object {
+        // Set from on-device lookups (docs/phase3-notes.md): the right name scored 0.96–1.00 and the
+        // next-best wrong one 0.08–0.12 below it.
+        private const val SOUND_ALIKE_MIN = 0.80
+        private const val SOUND_ALIKE_MARGIN = 0.06
+
         fun formatNumber(number: String): String =
             PhoneNumberUtils.formatNumber(number, Locale.getDefault().country) ?: number
 

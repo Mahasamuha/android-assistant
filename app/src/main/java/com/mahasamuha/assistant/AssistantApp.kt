@@ -14,6 +14,8 @@ import com.mahasamuha.assistant.contacts.ContactDirectory
 import com.mahasamuha.assistant.contacts.FindContactTool
 import com.mahasamuha.assistant.llm.ChatClient
 import com.mahasamuha.assistant.llm.GatewayChatClient
+import com.mahasamuha.assistant.navigation.NavigateTool
+import com.mahasamuha.assistant.navigation.SavedPlaces
 import com.mahasamuha.assistant.remote.FallbackTool
 import com.mahasamuha.assistant.remote.McpClient
 import com.mahasamuha.assistant.remote.RemoteTools
@@ -25,6 +27,7 @@ import com.mahasamuha.assistant.tools.ToolRegistry
 import com.mahasamuha.assistant.voice.TAG
 import com.mahasamuha.assistant.voice.LocationSource
 import com.mahasamuha.assistant.voice.PlatformLocationSource
+import com.mahasamuha.assistant.voice.VoicePreference
 import com.mahasamuha.assistant.weather.OpenMeteoWeather
 import com.mahasamuha.assistant.weather.WeatherTool
 
@@ -34,6 +37,8 @@ class AssistantApp : Application() {
     val auth by lazy { AuthManager(this, config, TokenStore(this)) }
     val chatClient: ChatClient by lazy { GatewayChatClient(config.gatewayUrls, auth) }
     val locationSource: LocationSource by lazy { PlatformLocationSource(this) }
+    val savedPlaces by lazy { SavedPlaces(this) }
+    val voicePreference by lazy { VoicePreference(this) }
 
     private val weatherTool by lazy { WeatherTool(OpenMeteoWeather(), locationSource) }
     private val contacts by lazy { ContactDirectory(contentResolver, resources) }
@@ -62,6 +67,7 @@ class AssistantApp : Application() {
                 launch,
                 closePanel,
             ) to granted(Manifest.permission.CALL_PHONE),
+            NavigateTool(this, savedPlaces, contacts.takeIf { contactsAllowed }, launch, closePanel) to true,
         )
         val local = candidates.filter { (_, allowed) -> allowed }.map { (tool, _) -> tool }
         val reserved = candidates.map { (tool, _) -> tool }.filterNot { it.allowRemote }.map { it.definition.name }.toSet()

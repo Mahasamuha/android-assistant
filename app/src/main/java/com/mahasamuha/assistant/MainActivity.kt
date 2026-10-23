@@ -12,14 +12,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,7 +45,9 @@ import com.mahasamuha.assistant.ui.MonoLabel
 import com.mahasamuha.assistant.ui.PrimaryButton
 import com.mahasamuha.assistant.ui.SecondaryButton
 import com.mahasamuha.assistant.ui.StatusDot
+import com.mahasamuha.assistant.voice.PlatformSpeaker
 import com.mahasamuha.assistant.voice.TAG
+import com.mahasamuha.assistant.voice.VoiceOption
 import kotlinx.coroutines.launch
 
 /** Explains setup, links to the assistant settings screen, and handles sign-in. */
@@ -57,6 +62,12 @@ class MainActivity : ComponentActivity() {
     private var smsAllowed by mutableStateOf(false)
     private var callsAllowed by mutableStateOf(false)
     private var message by mutableStateOf<String?>(null)
+    private var home by mutableStateOf("")
+    private var voices by mutableStateOf<List<VoiceOption>>(emptyList())
+    private var voice by mutableStateOf<String?>(null)
+    // Plays the samples; the activity is visible, so its own speech is allowed.
+    private lateinit var speaker: PlatformSpeaker
+    private var work by mutableStateOf("")
 
     private val requestMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         micAllowed = granted
@@ -88,6 +99,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        home = app.savedPlaces.home
+        work = app.savedPlaces.work
+        voice = app.voicePreference.name
+        speaker = PlatformSpeaker(this)
+        runReporting("Voices") { voices = speaker.voices(); null }
         setContent {
             val signedIn by app.auth.signedIn.collectAsState()
             AssistantTheme {
@@ -100,6 +116,13 @@ class MainActivity : ComponentActivity() {
                     smsAllowed = smsAllowed,
                     callsAllowed = callsAllowed,
                     message = message,
+                    home = home,
+                    work = work,
+                    onHomeChange = { home = it; app.savedPlaces.home = it },
+                    onWorkChange = { work = it; app.savedPlaces.work = it },
+                    voices = voices,
+                    voice = voice,
+                    onPickVoice = ::pickVoice,
                     onOpenAssistantSettings = { open(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) },
                     onSignIn = { runReporting("Sign-in") { signIn.launch(app.auth.signInIntent()); null } },
                     onSignOut = { runReporting("Sign-out") { app.auth.signOut(); "Signed out" } },
@@ -121,6 +144,23 @@ class MainActivity : ComponentActivity() {
         contactsAllowed = checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
         smsAllowed = checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
         callsAllowed = checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+    }
+
+    override fun onDestroy() {
+        speaker.shutdown()
+        super.onDestroy()
+    }
+
+    /** Saves [name] (null: the engine default) for the next session and plays a sample in it. */
+    private fun pickVoice(name: String?) {
+        voice = name
+        app.voicePreference.name = name
+        runReporting("Voice") {
+            speaker.stop()
+            speaker.setVoice(name)
+            speaker.speak(VOICE_SAMPLE)
+            null
+        }
     }
 
     /** UI boundary: runs [block] and shows its result, or the error, as the status message. */
@@ -160,6 +200,13 @@ private fun SetupScreen(
     smsAllowed: Boolean,
     callsAllowed: Boolean,
     message: String?,
+    home: String,
+    work: String,
+    onHomeChange: (String) -> Unit,
+    onWorkChange: (String) -> Unit,
+    voices: List<VoiceOption>,
+    voice: String?,
+    onPickVoice: (String?) -> Unit,
     onOpenAssistantSettings: () -> Unit,
     onSignIn: () -> Unit,
     onSignOut: () -> Unit,
@@ -257,7 +304,57 @@ private fun SetupScreen(
                 else "Optional: placing calls.",
             )
             if (!callsAllowed) Action(Step.Calls, "allow calling", onAllowCalls)
+
+            Hairline()
+            MonoLabel("places")
+            Text(
+                "For \"navigate home\" and \"navigate to work\". They stay on this phone: Samu says \"home\" or " +
+                    "\"work\", and only the maps app gets the address.",
+                style = AppType.body,
+                color = colors.textBody,
+            )
+            OutlinedTextField(
+                value = home,
+                onValueChange = onHomeChange,
+                label = { Text("home address") },
+                singleLine = true,
+                textStyle = AppType.body,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = work,
+                onValueChange = onWorkChange,
+                label = { Text("work address") },
+                singleLine = true,
+                textStyle = AppType.body,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Hairline()
+            MonoLabel("voice")
+            Text(
+                "Tap a voice to hear it; Samu uses it from the next time you open the panel. Only voices that run " +
+                    "on the phone are listed.",
+                style = AppType.body,
+                color = colors.textBody,
+            )
+            @Composable
+            fun VoiceRow(name: String?, label: String) = Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().clickable { onPickVoice(name) },
+            ) {
+                StatusDot(name == voice)
+                Column {
+                    Text(label, style = AppType.body, color = colors.text)
+                    name?.let { Text(it, style = AppType.eyebrow, color = colors.textMuted) }
+                }
+            }
+            VoiceRow(null, "Engine default")
+            voices.forEach { VoiceRow(it.name, it.label) }
             message?.let { Text(it, style = AppType.caption, color = colors.textMuted) }
         }
     }
 }
+
+private const val VOICE_SAMPLE = "Hi, I'm Samu. Calling Sam Lee, mobile."

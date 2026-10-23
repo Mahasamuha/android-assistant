@@ -94,6 +94,8 @@ dependencies {
     implementation(libs.androidx.savedstate.ktx)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.appauth)
+    // Only for the one-tap "turn on location" dialog before navigating (plan §5a).
+    implementation(libs.play.services.location)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)

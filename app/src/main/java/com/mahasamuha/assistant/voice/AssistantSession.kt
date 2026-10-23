@@ -57,7 +57,7 @@ class AssistantSession(context: Context) :
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
 
         val app = context.applicationContext as AssistantApp
-        speaker = PlatformSpeaker(context)
+        speaker = PlatformSpeaker(context, app.voicePreference.name)
         controller = VoiceSessionController(
             scope = lifecycleScope,
             stt = PlatformSpeechToText(context),
