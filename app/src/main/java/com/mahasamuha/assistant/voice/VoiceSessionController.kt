@@ -126,6 +126,14 @@ class VoiceSessionController(
         speaker.stop()
     }
 
+    /**
+     * Ends the turn but lets speech in progress finish: an action has handed over and the panel is about
+     * to close, so the model's reply after it ("Your bread alarm is set…") would only repeat the report.
+     */
+    fun endTurn() {
+        turn?.cancel()
+    }
+
     /** A follow-up turn listens right after an answer; if the user says nothing, it just stops. */
     private suspend fun runTurn(followUp: Boolean) {
         _state.update { it.copy(phase = PanelState.Phase.Starting, hearing = "", error = null) }

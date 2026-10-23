@@ -67,8 +67,12 @@ class AssistantSession(context: Context) :
             toolsLoading = lifecycleScope.async {
                 app.sessionTools(
                     launch = { intent -> context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
-                    // After any speech in progress, so a reported action's line ("Timer, 10 minutes") isn't cut off.
-                    closePanel = { lifecycleScope.launch { speaker.awaitIdle(); finish() } },
+                    // No more model rounds, but after any speech in progress, so a reported action's line
+                    // ("Timer, 10 minutes") isn't cut off.
+                    closePanel = {
+                        controller.endTurn()
+                        lifecycleScope.launch { speaker.awaitIdle(); finish() }
+                    },
                 )
             },
             skills = app.skills,
