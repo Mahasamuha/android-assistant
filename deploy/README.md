@@ -1,6 +1,6 @@
 # Deploy: auth gateway + Bifrost + MCP server
 
-Three containers on one private network. Only the gateway publishes a port, and only to the address in `GATEWAY_BIND` (loopback by default), so the reverse proxy is its only way in. Bifrost and the MCP server publish nothing.
+Three containers on two private networks (gateway + Bifrost, gateway + MCP), so only the gateway reaches both. Only the gateway publishes a port, and only to the address in `GATEWAY_BIND` (loopback by default), so the reverse proxy is its only way in. Bifrost and the MCP server publish nothing.
 
 ```
 phone ──HTTPS──▶ reverse proxy ──▶ gateway (:8080 in container) ──┬─ /v1/responses ─▶ bifrost:8080 ──▶ Anthropic
@@ -26,9 +26,13 @@ Secrets stay in the env files. The Bifrost config refers to them as `env.ANTHROP
    ```
 2. In `local/bifrost-config.json`, set the virtual key name and the monthly budget (`max_limit`, in dollars).
 3. Set a spend limit on the Anthropic Console workspace too, as a backstop.
-4. Start the stack:
+4. Start the stack. The gateway and MCP images come from Docker Hub (`mahasamuha/samu-gateway`, `mahasamuha/samu-mcp`), published by `.github/workflows/images.yml` on every push to `main` that touches them; only the `deploy/` directory is needed on the server:
    ```sh
-   docker compose up -d --build
+   docker compose pull && docker compose up -d
+   ```
+   Set `IMAGE_TAG` in `.env` to a `sha-<commit>` tag to pin a version or roll back. To build from a checkout instead (development):
+   ```sh
+   docker compose -f compose.yaml -f compose.build.yaml up -d --build
    ```
 5. Point the reverse proxy at `GATEWAY_BIND` (see below).
 
@@ -70,4 +74,5 @@ Check it from outside once it's up: `curl https://<gateway-host>/healthz` return
   ```
 - **Body logs:** hourly JSONL files in the `gateway-logs` volume (`/app/logs`), deleted after `LOG_BODY_RETENTION`.
 - **Costs and budget:** the Bifrost dashboard. It has no login in this setup, so it's never published by default. See `compose.admin.yaml` for temporary loopback access over an SSH tunnel.
-- **Upgrades:** both images are pinned. Bump the tag in `compose.yaml` (Bifrost) or the Dockerfile (gateway) deliberately.
+- **Updates:** `docker compose pull && docker compose up -d` picks up the latest gateway and MCP images. Bifrost and the Node base images are pinned; bump their tags in `compose.yaml` and the Dockerfiles deliberately.
+- **Publishing** needs a `DOCKERHUB_TOKEN` secret in the GitHub repo (a Docker Hub access token for `mahasamuha` with read/write).

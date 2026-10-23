@@ -1,0 +1,90 @@
+name: Publish server images
+
+# The auth gateway and the MCP server, published to Docker Hub so the home server only pulls them
+# (deploy/README.md). Neither image holds configuration: everything comes from env at runtime.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - gateway/**
+      - mcp/**
+      - .github/workflows/images.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gateway
+            image: mahasamuha/samu-gateway
+            # Placeholders only: enough for the server to start and answer /healthz.
+            smoke_env: >-
+              -e ISSUER_URL=https://issuer.invalid/
+              -e JWKS_URL=https://issuer.invalid/jwks
+              -e AUDIENCE=smoke
+              -e UPSTREAM_URL=http://127.0.0.1:9
+              -e UPSTREAM_VIRTUAL_KEY=smoke
+          - name: mcp
+            image: mahasamuha/samu-mcp
+            smoke_env: -e BRAVE_API_KEY=smoke
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          username: mahasamuha
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        id: meta
+        with:
+          images: ${{ matrix.image }}
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+
+      # Build into the local daemon first so the image is smoke-tested before anything is pushed.
+      - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: ${{ matrix.name }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ matrix.name }}:smoke
+          cache-from: type=gha,scope=${{ matrix.name }}
+
+      # Starts the server read-only with no capabilities, as compose runs it, and checks /healthz.
+      - name: Smoke test image
+        run: |
+          docker run -d --name smoke --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges:true ${{ matrix.smoke_env }} -e PORT=8080 \
+            ${{ matrix.name }}:smoke
+          for _ in $(seq 1 20); do
+            if docker exec smoke wget -qO- http://127.0.0.1:8080/healthz; then exit 0; fi
+            sleep 1
+          done
+          docker logs smoke
+          exit 1
+
+      - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: ${{ matrix.name }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          provenance: true
+          sbom: true

@@ -1,11 +1,11 @@
 # Auth gateway + Bifrost + MCP server. Real values live in deploy/local/ and deploy/.env (both gitignored);
-# see README.md for setup.
+# see README.md for setup. The gateway and MCP images are pulled from Docker Hub (published by
+# .github/workflows/images.yml); compose.build.yaml builds them from source instead, for development.
 name: assistant
 
 services:
   gateway:
-    build: ../gateway
-    image: assistant-gateway
+    image: mahasamuha/samu-gateway:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: local/gateway.env
     environment:
@@ -35,8 +35,7 @@ services:
   # outbound access for the search API. It reads untrusted web content, so it gets its own network
   # (it can't reach Bifrost's admin API) and a locked-down container.
   mcp:
-    build: ../mcp
-    image: assistant-mcp
+    image: mahasamuha/samu-mcp:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       BRAVE_API_KEY: ${BRAVE_API_KEY:?set BRAVE_API_KEY in deploy/.env}
