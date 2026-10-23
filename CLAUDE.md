@@ -74,7 +74,7 @@ No infrastructure specifics go into tracked files or commit messages. This cover
 
 ## Current phase
 
-Phase 1 is done (`docs/phase1-notes.md`). Phase 2 is working end to end in dev: gateway + Bifrost, app sign-in, and the voice round trip with web search and a weather tool (`docs/phase2-notes.md`). Phase 3 findings are in `docs/phase3-notes.md`. **Phase 3 follows the tools-and-skills design in plan §4b**: steps 1 (bundled skills) and 2 (tool annotations and the confirmation flow) are done; step 3 is in progress: `find_contact`, `send_sms` and the `texting` skill are built and tested on device; `place_call` and the `calling` skill are built and tested on device, including cancel during an announcement and the ask for an unknown number. Step 4 (MCP server) follows when a server-side tool is needed. The phase 1 and phase 2 sections below are kept as the original briefs.
+Phases 1–3 are done (`docs/phase1-notes.md`, `docs/phase2-notes.md`, `docs/phase3-notes.md`): invocation, the gateway + Bifrost voice round trip, and the tools-and-skills design in plan §4b, including the MCP server (web search, Pirate Weather). Two security review rounds have been fixed and checked on device. **The server side is deployed on the home server**: the gateway and MCP images are published to Docker Hub by `.github/workflows/images.yml` and pulled there (`deploy/README.md`); the dev stack on the workstation is stopped. Next: daily use on the Pixel 8, then phase 4 (screen context) only if a real need shows up. Draft skills via MCP wait until a draft exists. The phase 1 and phase 2 sections below are kept as the original briefs.
 
 ### Phase 1 — Prove invocation
 
