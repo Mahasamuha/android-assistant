@@ -27,7 +27,8 @@ interface ReadOnlyTool : Tool {
 
 /**
  * Changes something outside the conversation (sends a text, places a call). The tool only prepares the
- * action; the registry gets it confirmed or announced before performing it, so no tool can skip that step.
+ * action; the registry gets it confirmed or announced before performing it (a harmless one is performed at
+ * once and reported), so no tool can skip that step.
  */
 interface ActionTool : Tool {
     /** Validates and resolves the arguments. Throw for failures, as in [ReadOnlyTool.run]. */
@@ -50,6 +51,13 @@ sealed interface Confirmation {
      * read outside content, the registry asks [question] instead ("Call Mom, mobile?").
      */
     data class Announce(override val text: String, val question: String) : Confirmation
+
+    /**
+     * Harmless and easy to undo (a timer, an alarm): performed at once and said while it happens
+     * ("Timer, 10 minutes"), with nothing to cancel. Stays a report after outside content, since an
+     * injected timer does no harm.
+     */
+    data class Report(override val text: String) : Confirmation
 }
 
 sealed interface ConfirmationResult {

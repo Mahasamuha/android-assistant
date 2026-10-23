@@ -67,7 +67,8 @@ class AssistantSession(context: Context) :
             toolsLoading = lifecycleScope.async {
                 app.sessionTools(
                     launch = { intent -> context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
-                    closePanel = { finish() },
+                    // After any speech in progress, so a reported action's line ("Timer, 10 minutes") isn't cut off.
+                    closePanel = { lifecycleScope.launch { speaker.awaitIdle(); finish() } },
                 )
             },
             skills = app.skills,
@@ -146,7 +147,8 @@ class AssistantSession(context: Context) :
     override fun onHide() {
         Log.i(TAG, "Session.onHide")
         // Dismissing the panel means "stop talking". A call's announcement has already finished by
-        // the time the call is placed and the panel closes (the confirmation waits for it).
+        // the time the call is placed (the confirmation waits for it), and closePanel waits for
+        // speech to finish, so neither is cut off by this.
         controller.stop()
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
         super.onHide()

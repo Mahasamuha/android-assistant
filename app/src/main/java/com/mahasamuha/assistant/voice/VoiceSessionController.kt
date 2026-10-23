@@ -271,9 +271,17 @@ class VoiceSessionController(
 
     /**
      * Gets an action confirmed (plan §4b): voice or tap, whichever comes first. A tap cuts off the
-     * prompt; an announcement goes ahead once it has been spoken in full.
+     * prompt; an announcement goes ahead once it has been spoken in full. A report doesn't wait: the
+     * action runs at once while the line plays.
      */
     private suspend fun confirm(confirmation: Confirmation): ConfirmationResult {
+        // Nothing to cancel: the action runs at once, and the line plays while it does.
+        if (confirmation is Confirmation.Report) {
+            if (keyguard.isDeviceLocked) throw IllegalStateException("The phone locked, so the action was not performed")
+            speakSentence(confirmation.text)
+            addMessage(fromUser = false, confirmation.text)
+            return ConfirmationResult.Confirmed
+        }
         val tapped = CompletableDeferred<Boolean>()
         tap = tapped
         _state.update { it.copy(confirming = confirmation) }
@@ -285,7 +293,7 @@ class VoiceSessionController(
                     speaker.awaitIdle()
                     when (confirmation) {
                         is Confirmation.Ask -> hearConfirmation()
-                        is Confirmation.Announce -> ConfirmationResult.Confirmed to null
+                        is Confirmation.Announce, is Confirmation.Report -> ConfirmationResult.Confirmed to null
                     }
                 }
                 select<Pair<ConfirmationResult, String?>> {

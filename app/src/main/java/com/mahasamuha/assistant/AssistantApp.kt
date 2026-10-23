@@ -10,6 +10,8 @@ import android.util.Log
 import com.mahasamuha.assistant.auth.AuthManager
 import com.mahasamuha.assistant.auth.TokenStore
 import com.mahasamuha.assistant.calls.PlaceCallTool
+import com.mahasamuha.assistant.clock.SetAlarmTool
+import com.mahasamuha.assistant.clock.SetTimerTool
 import com.mahasamuha.assistant.contacts.ContactDirectory
 import com.mahasamuha.assistant.contacts.FindContactTool
 import com.mahasamuha.assistant.llm.ChatClient
@@ -68,6 +70,9 @@ class AssistantApp : Application() {
                 closePanel,
             ) to granted(Manifest.permission.CALL_PHONE),
             NavigateTool(this, savedPlaces, contacts.takeIf { contactsAllowed }, launch, closePanel) to true,
+            // SET_ALARM is a normal permission, granted at install.
+            SetTimerTool(this, launch, closePanel) to true,
+            SetAlarmTool(this, launch, closePanel) to true,
         )
         val local = candidates.filter { (_, allowed) -> allowed }.map { (tool, _) -> tool }
         val reserved = candidates.map { (tool, _) -> tool }.filterNot { it.allowRemote }.map { it.definition.name }.toSet()

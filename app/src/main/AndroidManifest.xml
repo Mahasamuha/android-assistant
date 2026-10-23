@@ -8,11 +8,15 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
     <!-- navigate checks that the maps app it's about to open is installed (package visibility). -->
     <queries>
         <package android:name="com.waze" />
         <package android:name="com.google.android.apps.maps" />
+        <!-- set_timer and set_alarm check that a clock app handles their intents. -->
+        <intent><action android:name="android.intent.action.SET_TIMER" /></intent>
+        <intent><action android:name="android.intent.action.SET_ALARM" /></intent>
     </queries>
 
     <application
