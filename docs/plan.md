@@ -1,6 +1,6 @@
 # Phone Assistant — Plan (draft)
 
-Status: phase 1 done (`docs/phase1-notes.md`); phase 2 working end to end (`docs/phase2-notes.md`); phase 3 in progress (`docs/phase3-notes.md`).
+Status: phases 1–3 done (`docs/phase1-notes.md`, `docs/phase2-notes.md`, `docs/phase3-notes.md`); the server side is deployed on the home server, and the app is in daily use on the Pixel 8. Built since phase 3: navigation (2026-10-22), timers and alarms (2026-10-23). Planned next in §5a: search results list, music, reminders.
 
 ## 1. Goal
 
@@ -137,6 +137,7 @@ Two kinds of capability, borrowed from existing standards rather than invented: 
   - *Ask* (SMS, ambiguous calls): the panel shows the prompt with Confirm and Cancel, speaks it, then listens. Voice or tap, whichever comes first. A spoken reply confirms only if the whole utterance is a yes ("yes", "send it", "go ahead"…), judged on the phone by a fixed list, not by the model.
   - *Announce* (high-confidence calls): the panel shows the text with Cancel, speaks it in full, then performs. Once a read-only tool with `openWorldHint` has run in the session (web search, weather), the registry turns every Announce into an Ask with the tool's question form ("Call Mom, mobile?") for the rest of the session.
   - *Report* (timers, alarms): performs at once and speaks the text while it happens; no card and nothing to cancel. Stays a report after outside content. The panel closes only once the line has been spoken.
+  - An action that closes the panel (call, navigation, timer, alarm) also ends the turn, so the model gets no further round: once the panel waited for speech, the model's follow-up ("Your bread alarm is set…") was spoken after the report (2026-10-23).
   - The prompt text is built by phone code from the resolved arguments, never from the model's text, so the user confirms what will actually happen.
   - Anything other than a yes (no, silence, "no, say ten minutes") returns `{"status": "not_confirmed", "user_said": …}` to the model, which can then revise and call again (confirmed again). The base prompt tells the model the phone confirms, so it calls send/call tools directly instead of asking first.
   - Before performing, the phone checks it is still unlocked (§2).
@@ -233,9 +234,9 @@ The setup screen in `MainActivity` doubles as the options screen. Settings live 
 - **Search results list (§5a):**
   - Endpoint: `web_search` uses Brave's `llm/context` (extracted text for 8 pages in a 24,000-character budget), which is more than a link list needs. Options: reuse `web_search` and drop the text on the phone; add a mode to it; or a separate remote tool on Brave's plain web search endpoint (titles, snippets, more results, fewer tokens through the server). Check what `llm/context` returns per page (title, snippet) before choosing.
   - Voice follow-ups ("open the second one"): out of scope for the first version; would need the phone to resolve the ordinal against the shown list, not the model.
-- **Reminders, timers and alarms (§5a):**
+- **Reminders, timers and alarms (§5a).** Timers and alarms are built and work on the Pixel 8 (2026-10-23); reminders are not:
   - Reminder backend. Android has no system reminder API. Options: (a) a calendar event with a notification, inserted through `CalendarContract` (`WRITE_CALENDAR`, lands in whichever calendar account is chosen, so it syncs off the phone); (b) Samu-owned reminders: `AlarmManager` exact alarm plus a notification (`USE_EXACT_ALARM` or `SCHEDULE_EXACT_ALARM`, `POST_NOTIFICATIONS`), stored on the phone until they fire and lost on uninstall; (c) a task app with an API (e.g. a self-hosted one as a remote tool). (b) stores the reminder text on disk; that is user-requested data rather than a log, so it doesn't conflict with the memory row, but it should be deleted once the reminder fires or is dismissed.
-  - Verify on the phone that Google Clock honors `EXTRA_SKIP_UI` for both intents on Android 17 and doesn't bring its own UI over the panel.
+  - Still to check on the phone: that Google Clock honors `EXTRA_SKIP_UI` for both intents on Android 17 and never brings its own UI over the panel; whether it reuses a matching alarm (same time, days and label) or an unused timer of the same length and label instead of adding one (the `AlarmClock` docs allow either); and that timers set with the UI skipped are removed once dismissed.
 
   Reminder backend, (a) vs (b):
 
