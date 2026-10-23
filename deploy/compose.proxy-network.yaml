@@ -1,14 +1,17 @@
 # Use when the reverse proxy runs in Docker on the same host: the gateway joins the proxy's network
 # and publishes no host port at all. Set PROXY_NETWORK in deploy/.env, then:
 #   docker compose -f compose.yaml -f compose.proxy-network.yaml up -d
-# and point the proxy at http://gateway:8080.
+# and point the proxy at http://samu-gateway:8080 (an alias, since "gateway" alone could clash with
+# another container on the proxy's network).
 services:
   gateway:
     ports: !reset []
     networks:
-      - llm
-      - tools
-      - proxy
+      llm: {}
+      tools: {}
+      proxy:
+        aliases:
+          - samu-gateway
 
 networks:
   proxy:
