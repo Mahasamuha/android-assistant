@@ -41,6 +41,11 @@ services:
       BRAVE_API_KEY: ${BRAVE_API_KEY:?set BRAVE_API_KEY in deploy/.env}
       # Optional: with it, the server's get_weather (Pirate Weather) overrides the phone's Open-Meteo one.
       PIRATE_WEATHER_API_KEY: ${PIRATE_WEATHER_API_KEY:-}
+      # Optional: with PLEX_URL and PLEX_TOKEN, the server offers music_find (the phone's play_music lookup).
+      PLEX_URL: ${PLEX_URL:-}
+      PLEX_TOKEN: ${PLEX_TOKEN:-}
+      PLEX_TLS_NAME: ${PLEX_TLS_NAME:-}
+      PLEX_MUSIC_SECTION: ${PLEX_MUSIC_SECTION:-}
       PORT: "8080"
     read_only: true
     tmpfs:

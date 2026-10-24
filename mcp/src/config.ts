@@ -12,6 +12,13 @@ export interface Config {
   /** Pirate Weather key; without it the server offers no get_weather and the phone uses its own. */
   pirateWeatherApiKey: string | undefined;
   weatherUnits: "us" | "si" | "ca" | "uk";
+  /** Plex server URL and token; without both, the server offers no music_find. */
+  plexUrl: string | undefined;
+  plexToken: string | undefined;
+  /** The name on the Plex server's certificate, when it differs from the host in plexUrl (a *.plex.direct name). */
+  plexTlsName: string | undefined;
+  /** Title of the Plex library section holding the music. */
+  plexMusicSection: string;
   maxBodyBytes: number;
 }
 
@@ -24,6 +31,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     searchMaxPages: integer(env, "SEARCH_MAX_PAGES", 8),
     pirateWeatherApiKey: env.PIRATE_WEATHER_API_KEY || undefined,
     weatherUnits: units(env, "WEATHER_UNITS", "us"),
+    plexUrl: env.PLEX_URL || undefined,
+    plexToken: env.PLEX_TOKEN || undefined,
+    plexTlsName: env.PLEX_TLS_NAME || undefined,
+    plexMusicSection: env.PLEX_MUSIC_SECTION || "Music",
     maxBodyBytes: integer(env, "MAX_BODY_BYTES", 64 * 1024),
   };
 }

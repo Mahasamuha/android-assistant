@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { search } from "./brave.js";
 import { loadConfig } from "./config.js";
+import { musicFind } from "./plex.js";
 import { weather } from "./weather.js";
 
 const config = loadConfig();
@@ -55,6 +56,31 @@ function buildServer(): McpServer {
         const started = performance.now();
         const result = await weather(config, { place, day, endDay: end_day });
         log("get_weather", { alerts: Array.isArray(result.alerts) ? result.alerts.length : 0, ms: Math.round(performance.now() - started) });
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+      },
+    );
+  }
+
+  if (config.plexUrl && config.plexToken) {
+    server.registerTool(
+      "music_find",
+      {
+        title: "Find music",
+        description:
+          "Look up what the user asked to play in their own music library, and return the exact names the library uses. " +
+          "Not found returns close suggestions.",
+        inputSchema: {
+          kind: z.enum(["album", "song", "artist", "playlist", "genre"]).describe("What kind of thing the name is."),
+          name: z.string().min(1).describe("The name as the user said it."),
+          artist: z.string().optional().describe("The artist, when the user named one with an album or song."),
+        },
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      async ({ kind, name, artist }) => {
+        const started = performance.now();
+        const result = await musicFind(config, { kind, name, artist });
+        // Names and queries are the user's listening, so only the outcome is logged.
+        log("music_find", { kind, status: result.status, ms: Math.round(performance.now() - started) });
         return { content: [{ type: "text", text: JSON.stringify(result) }] };
       },
     );
