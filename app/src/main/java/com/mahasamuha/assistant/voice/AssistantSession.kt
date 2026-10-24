@@ -7,6 +7,9 @@ import android.content.Intent
 import android.net.Uri
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Bundle
 import android.provider.Settings
 import android.service.voice.VoiceInteractionSession
@@ -46,6 +49,25 @@ class AssistantSession(context: Context) :
 
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
+
+    private val audioManager by lazy { context.getSystemService(AudioManager::class.java) }
+
+    /**
+     * Held for the whole time the panel is up, so music pauses while the user talks (it hurts
+     * recognition) and resumes when this is abandoned, as with other assistants. Separate from the
+     * Speaker's ducking request: the no-op listener gives this request its own focus client.
+     */
+    private val sessionFocus by lazy {
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build(),
+            )
+            .setOnAudioFocusChangeListener { }
+            .build()
+    }
 
     private lateinit var speaker: Speaker
     private lateinit var controller: VoiceSessionController
@@ -133,6 +155,7 @@ class AssistantSession(context: Context) :
         Log.i(TAG, "Session.onShow flags=${describeShowFlags(showFlags)} args=${describeBundle(args)}")
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
         controller.listen()
+        audioManager.requestAudioFocus(sessionFocus)
     }
 
     override fun onHandleAssist(state: AssistState) {
@@ -154,6 +177,7 @@ class AssistantSession(context: Context) :
         // the time the call is placed (the confirmation waits for it), and closePanel waits for
         // speech to finish, so neither is cut off by this.
         controller.stop()
+        audioManager.abandonAudioFocusRequest(sessionFocus)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
         super.onHide()
     }
@@ -161,6 +185,7 @@ class AssistantSession(context: Context) :
     override fun onDestroy() {
         Log.i(TAG, "Session.onDestroy")
         speaker.shutdown()
+        audioManager.abandonAudioFocusRequest(sessionFocus)
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         super.onDestroy()
     }

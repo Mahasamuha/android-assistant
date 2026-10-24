@@ -9,11 +9,15 @@
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
     <!-- navigate checks that the maps app it's about to open is installed (package visibility). -->
     <queries>
         <package android:name="com.waze" />
         <package android:name="com.google.android.apps.maps" />
+        <!-- play_music and music_control check that Symfonium is installed. -->
+        <package android:name="app.symfonik.music.player" />
         <!-- set_timer and set_alarm check that a clock app handles their intents. -->
         <intent><action android:name="android.intent.action.SET_TIMER" /></intent>
         <intent><action android:name="android.intent.action.SET_ALARM" /></intent>

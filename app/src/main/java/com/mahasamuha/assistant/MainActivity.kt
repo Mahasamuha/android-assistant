@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
     private var contactsAllowed by mutableStateOf(false)
     private var smsAllowed by mutableStateOf(false)
     private var callsAllowed by mutableStateOf(false)
+    private var localNetworkAllowed by mutableStateOf(false)
     private var message by mutableStateOf<String?>(null)
     private var home by mutableStateOf("")
     private var voices by mutableStateOf<List<VoiceOption>>(emptyList())
@@ -89,6 +90,10 @@ class MainActivity : ComponentActivity() {
         callsAllowed = granted
     }
 
+    private val requestLocalNetwork = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        localNetworkAllowed = granted
+    }
+
     private val signIn = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         runReporting("Sign-in") {
             app.auth.completeSignIn(result.data)
@@ -115,6 +120,7 @@ class MainActivity : ComponentActivity() {
                     contactsAllowed = contactsAllowed,
                     smsAllowed = smsAllowed,
                     callsAllowed = callsAllowed,
+                    localNetworkAllowed = localNetworkAllowed,
                     message = message,
                     home = home,
                     work = work,
@@ -131,6 +137,7 @@ class MainActivity : ComponentActivity() {
                     onAllowContacts = { requestContacts.launch(Manifest.permission.READ_CONTACTS) },
                     onAllowSms = { requestSms.launch(Manifest.permission.SEND_SMS) },
                     onAllowCalls = { requestCalls.launch(Manifest.permission.CALL_PHONE) },
+                    onAllowLocalNetwork = { requestLocalNetwork.launch(Manifest.permission.ACCESS_LOCAL_NETWORK) },
                 )
             }
         }
@@ -144,6 +151,7 @@ class MainActivity : ComponentActivity() {
         contactsAllowed = checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
         smsAllowed = checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
         callsAllowed = checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+        localNetworkAllowed = checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) == PackageManager.PERMISSION_GRANTED
     }
 
     override fun onDestroy() {
@@ -188,7 +196,7 @@ class MainActivity : ComponentActivity() {
 }
 
 /** The next thing to set up gets the one primary button; everything else is a ghost button. */
-private enum class Step { Role, SignIn, Mic, Location, Contacts, Sms, Calls, None }
+private enum class Step { Role, SignIn, Mic, Location, Contacts, Sms, Calls, LocalNetwork, None }
 
 @Composable
 private fun SetupScreen(
@@ -199,6 +207,7 @@ private fun SetupScreen(
     contactsAllowed: Boolean,
     smsAllowed: Boolean,
     callsAllowed: Boolean,
+    localNetworkAllowed: Boolean,
     message: String?,
     home: String,
     work: String,
@@ -215,6 +224,7 @@ private fun SetupScreen(
     onAllowContacts: () -> Unit,
     onAllowSms: () -> Unit,
     onAllowCalls: () -> Unit,
+    onAllowLocalNetwork: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val next = when {
@@ -225,6 +235,7 @@ private fun SetupScreen(
         !contactsAllowed -> Step.Contacts
         !smsAllowed -> Step.Sms
         !callsAllowed -> Step.Calls
+        !localNetworkAllowed -> Step.LocalNetwork
         else -> Step.None
     }
 
@@ -304,6 +315,12 @@ private fun SetupScreen(
                 else "Optional: placing calls.",
             )
             if (!callsAllowed) Action(Step.Calls, "allow calling", onAllowCalls)
+            Status(
+                localNetworkAllowed,
+                if (localNetworkAllowed) "Speakers allowed (finds Sonos and Cast speakers on home Wi-Fi)."
+                else "Optional: local network, to find Sonos and Cast speakers on home Wi-Fi to play music on.",
+            )
+            if (!localNetworkAllowed) Action(Step.LocalNetwork, "allow speakers", onAllowLocalNetwork)
 
             Hairline()
             MonoLabel("places")

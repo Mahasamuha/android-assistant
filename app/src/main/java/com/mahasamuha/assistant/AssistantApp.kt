@@ -16,6 +16,10 @@ import com.mahasamuha.assistant.contacts.ContactDirectory
 import com.mahasamuha.assistant.contacts.FindContactTool
 import com.mahasamuha.assistant.llm.ChatClient
 import com.mahasamuha.assistant.llm.GatewayChatClient
+import com.mahasamuha.assistant.music.MusicControlTool
+import com.mahasamuha.assistant.music.PlayMusicTool
+import com.mahasamuha.assistant.music.SpeakerDirectory
+import com.mahasamuha.assistant.music.Symfonium
 import com.mahasamuha.assistant.navigation.NavigateTool
 import com.mahasamuha.assistant.navigation.SavedPlaces
 import com.mahasamuha.assistant.remote.FallbackTool
@@ -45,7 +49,10 @@ class AssistantApp : Application() {
     private val weatherTool by lazy { WeatherTool(OpenMeteoWeather(), locationSource) }
     private val contacts by lazy { ContactDirectory(contentResolver, resources) }
     private val smsSender by lazy { SmsSender(this) }
-    private val remoteTools by lazy { RemoteTools(McpClient(config.gatewayUrls, auth)) }
+    private val mcpClient by lazy { McpClient(config.gatewayUrls, auth) }
+    private val remoteTools by lazy { RemoteTools(mcpClient) }
+    private val symfonium by lazy { Symfonium(this) }
+    private val speakerDirectory by lazy { SpeakerDirectory(this) }
 
     /**
      * Tools for one session: those whose permissions are granted right now, so a skill that needs a
@@ -73,13 +80,21 @@ class AssistantApp : Application() {
             // SET_ALARM is a normal permission, granted at install.
             SetTimerTool(this, launch, closePanel) to true,
             SetAlarmTool(this, launch, closePanel) to true,
+            // Symfonium takes plain broadcasts and the speaker scan needs only network state: no runtime permission.
+            PlayMusicTool(symfonium, speakerDirectory, mcpClient, closePanel) to true,
+            MusicControlTool(this, symfonium, speakerDirectory, closePanel) to true,
         )
         val local = candidates.filter { (_, allowed) -> allowed }.map { (tool, _) -> tool }
         val reserved = candidates.map { (tool, _) -> tool }.filterNot { it.allowRemote }.map { it.definition.name }.toSet()
 
         // A remote tool replaces a local one of the same name; a read-only local one stays behind it as the fallback.
         val localByName = local.associateBy { it.definition.name }
-        val remote = remoteTools.load()
+        // Remote tools that a local tool calls itself never reach the model.
+        val privateNames = candidates.flatMap { (tool, _) -> tool.privateRemoteTools }.toSet()
+        val loaded = remoteTools.load()
+        val remote = loaded
+            .filter { it.definition.name !in privateNames }
+            .also { Log.i(TAG, "Kept ${loaded.size - it.size} remote tools private") }
             .filter { tool ->
                 (tool.definition.name !in reserved).also { kept ->
                     if (!kept) Log.w(TAG, "Ignoring remote ${tool.definition.name}: the local one doesn't allow a remote override")

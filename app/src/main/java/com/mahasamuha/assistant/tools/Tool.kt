@@ -17,6 +17,9 @@ sealed interface Tool {
      * default, so the remote one is dropped, even in a session where this tool's permission is off.
      */
     val allowRemote: Boolean get() = false
+
+    /** Remote tools this local tool calls itself (plan §4b). They're kept out of the model's tool list. */
+    val privateRemoteTools: Set<String> get() = emptySet()
 }
 
 /** No side effects, so it runs without asking. Its definition must set `readOnlyHint`. */
