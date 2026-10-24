@@ -61,7 +61,7 @@ class AssistantApp : Application() {
      * [launch] starts an activity from the session, which must happen while it's visible; [closePanel]
      * dismisses the session (after a call is placed). Remote tools come from the MCP server (plan §4b).
      */
-    suspend fun sessionTools(launch: (Intent) -> Unit, closePanel: () -> Unit): ToolRegistry {
+    suspend fun sessionTools(launch: (Intent) -> Unit, closePanel: () -> Unit, keepPaused: () -> Unit): ToolRegistry {
         val contactsAllowed = granted(Manifest.permission.READ_CONTACTS)
         // Every local tool is built, with whether its permission is granted, so a local tool's name stays
         // reserved even in a session that leaves the tool out.
@@ -82,7 +82,7 @@ class AssistantApp : Application() {
             SetAlarmTool(this, launch, closePanel) to true,
             // Symfonium takes plain broadcasts and the speaker scan needs only network state: no runtime permission.
             PlayMusicTool(symfonium, speakerDirectory, mcpClient, closePanel) to true,
-            MusicControlTool(this, symfonium, speakerDirectory, closePanel) to true,
+            MusicControlTool(this, symfonium, speakerDirectory, closePanel, keepPaused) to true,
         )
         val local = candidates.filter { (_, allowed) -> allowed }.map { (tool, _) -> tool }
         val reserved = candidates.map { (tool, _) -> tool }.filterNot { it.allowRemote }.map { it.definition.name }.toSet()

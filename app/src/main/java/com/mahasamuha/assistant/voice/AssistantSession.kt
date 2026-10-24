@@ -69,6 +69,9 @@ class AssistantSession(context: Context) :
             .build()
     }
 
+    /** Set when the user paused music, so the session ends with a permanent focus loss for the player. */
+    private var keepOthersPaused = false
+
     private lateinit var speaker: Speaker
     private lateinit var controller: VoiceSessionController
 
@@ -95,6 +98,7 @@ class AssistantSession(context: Context) :
                         controller.endTurn()
                         lifecycleScope.launch { speaker.awaitIdle(); finish() }
                     },
+                    keepPaused = { keepOthersPaused = true },
                 )
             },
             skills = app.skills,
@@ -177,6 +181,22 @@ class AssistantSession(context: Context) :
         // the time the call is placed (the confirmation waits for it), and closePanel waits for
         // speech to finish, so neither is cut off by this.
         controller.stop()
+        if (keepOthersPaused) {
+            keepOthersPaused = false
+            // Abandoning a transient request makes the player's focus return as a gain, and it resumes.
+            // A permanent loss is the platform's "stopped by the user" signal, which players don't resume from.
+            val permanent = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build(),
+                )
+                .setOnAudioFocusChangeListener { }
+                .build()
+            audioManager.requestAudioFocus(permanent)
+            audioManager.abandonAudioFocusRequest(permanent)
+        }
         audioManager.abandonAudioFocusRequest(sessionFocus)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
         super.onHide()

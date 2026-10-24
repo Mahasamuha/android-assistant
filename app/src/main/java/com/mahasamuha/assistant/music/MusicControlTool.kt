@@ -20,6 +20,7 @@ class MusicControlTool(
     private val symfonium: Symfonium,
     private val speakers: SpeakerDirectory,
     private val closePanel: () -> Unit,
+    private val keepPaused: () -> Unit,
 ) : ActionTool {
 
     override val definition = ToolDefinition(
@@ -59,7 +60,15 @@ class MusicControlTool(
         val run: suspend () -> Unit
         when (action) {
             "play" -> { text = "Resuming."; run = { symfonium.command("play") } }
-            "pause" -> { text = "Paused."; run = { symfonium.command("pause") } }
+            "pause" -> {
+                text = "Paused."
+                run = {
+                    // The panel's focus has usually paused it already, so the session must end in a way that
+                    // doesn't resume it. The command still covers the case where the focus was refused.
+                    keepPaused()
+                    symfonium.command("pause")
+                }
+            }
             "next" -> { text = "Next track."; run = { symfonium.command("next") } }
             "previous" -> { text = "Previous track."; run = { symfonium.command("previous") } }
             "set_volume" -> {
