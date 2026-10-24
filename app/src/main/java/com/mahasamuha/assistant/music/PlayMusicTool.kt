@@ -118,6 +118,8 @@ class PlayMusicTool(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            // The server's messages name the failure ("Plex returned 401"), never the music asked for.
+            Log.w(TAG, "music_find failed: ${e.message}")
             null
         }
         val json = try {

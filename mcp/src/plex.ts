@@ -159,7 +159,8 @@ function get(config: Config, path: string): Promise<Container> {
       },
     );
     req.on("timeout", () => req.destroy(new Error("timed out")));
-    req.on("error", (e) => reject(new PlexError(`Plex unreachable: ${e.message}`)));
+    // A failed connection to every address is an AggregateError with an empty message; the code says why.
+    req.on("error", (e: NodeJS.ErrnoException) => reject(new PlexError(`Plex unreachable: ${e.code ?? e.message}`)));
     req.end();
   });
 }

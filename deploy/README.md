@@ -16,7 +16,7 @@ phone ──HTTPS──▶ reverse proxy ──▶ gateway (:8080 in container) 
 | `bifrost.env.example` | `local/bifrost.env` | Anthropic API key, virtual key |
 | `bifrost/config.example.json` | `local/bifrost-config.json` | Bifrost config: provider key, virtual key name, model allowlist, budget |
 
-The optional `PLEX_*` settings enable `music_find`, which the phone's `play_music` calls privately to get the exact names in your Plex music library. Get the token through plex.tv's PIN flow: it creates a "Samu" device in your account that you can revoke at any time. The MCP container must be able to reach the Plex server's LAN address. Plex's certificate is issued for a `*.plex.direct` name, not the LAN address, so set `PLEX_TLS_NAME` to that name; the certificate is still fully verified.
+The optional `PLEX_*` settings enable `music_find`, which the phone's `play_music` calls privately to get the exact names in your Plex music library. Get the token through plex.tv's PIN flow: it creates a "Samu" device in your account that you can revoke at any time. The MCP container must be able to reach the Plex server's LAN address; use its IP in `PLEX_URL`, since containers can't resolve `.local` (mDNS) names. Plex's certificate is issued for a `*.plex.direct` name, not the LAN address, so set `PLEX_TLS_NAME` to that name; the certificate is still fully verified.
 
 Secrets stay in the env files. The Bifrost config refers to them as `env.ANTHROPIC_API_KEY` and `env.BIFROST_VIRTUAL_KEY`.
 
