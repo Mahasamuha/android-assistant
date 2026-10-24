@@ -43,6 +43,23 @@ fun localConfigValue(key: String): String =
     localConfig.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: error("Missing $key in config.local.properties (copy config.example.properties and fill it in)")
 
+/** Runs a git command and returns its trimmed stdout, or null if git fails (no tags, no repo). */
+fun gitOutput(vararg args: String): String? {
+    val result = providers.exec {
+        commandLine("git", *args)
+        isIgnoreExitValue = true
+    }
+    return result.standardOutput.asText.get().trim().takeIf { result.result.get().exitValue == 0 && it.isNotEmpty() }
+}
+
+// Version comes from the vX.Y.Z tags CI creates on main; before the first tag, a dev placeholder.
+fun gitVersionName(): String =
+    gitOutput("describe", "--tags", "--match", "v[0-9]*", "--dirty")?.removePrefix("v")
+        ?: gitOutput("rev-parse", "--short", "HEAD")?.let { "0.1.0-dev+$it" }
+        ?: "0.1.0-dev"
+
+fun gitVersionCode(): Int = gitOutput("rev-list", "--count", "HEAD")?.toIntOrNull() ?: 1
+
 android {
     namespace = "com.mahasamuha.assistant"
     compileSdk {
@@ -53,8 +70,8 @@ android {
         applicationId = "com.mahasamuha.assistant"
         minSdk = 37
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = gitVersionCode()
+        versionName = gitVersionName()
 
         buildConfigField("String", "ISSUER_URL", "\"${localConfigValue("assistant.issuerUrl")}\"")
         buildConfigField("String", "CLIENT_ID", "\"${localConfigValue("assistant.clientId")}\"")

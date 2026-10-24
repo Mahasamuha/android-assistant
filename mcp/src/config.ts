@@ -1,6 +1,8 @@
 export class ConfigError extends Error {}
 
 export interface Config {
+  /** Release version baked into the image; "dev" outside a CI build. */
+  version: string;
   port: number;
   braveApiKey: string;
   /** Country code Brave ranks results for. */
@@ -24,6 +26,7 @@ export interface Config {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
+    version: env.SAMU_VERSION || "dev",
     port: integer(env, "PORT", 8080),
     braveApiKey: required(env, "BRAVE_API_KEY"),
     searchCountry: env.SEARCH_COUNTRY || "us",

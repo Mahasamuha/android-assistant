@@ -34,7 +34,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   const pathname = (req.url ?? "/").split("?", 1)[0] ?? "/";
 
   if (req.method === "GET" && pathname === "/healthz") {
-    sendJson(res, 200, { status: "ok" });
+    sendJson(res, 200, { status: "ok", version: config.version });
     return;
   }
 
@@ -106,7 +106,7 @@ function sendJson(res: ServerResponse, status: number, value: unknown, headers: 
 }
 
 const server = createServer((req, res) => void handle(req, res));
-server.listen(config.port, () => log("listening", { port: config.port, bodyLogRetentionMs: config.logBodyRetentionMs }));
+server.listen(config.port, () => log("listening", { version: config.version, port: config.port, bodyLogRetentionMs: config.logBodyRetentionMs }));
 
 process.on("SIGUSR2", () => debug.toggle());
 for (const signal of ["SIGTERM", "SIGINT"] as const) {

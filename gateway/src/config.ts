@@ -1,6 +1,8 @@
 import { ConfigError } from "./errors.js";
 
 export interface Config {
+  /** Release version baked into the image; "dev" outside a CI build. */
+  version: string;
   port: number;
   /** Issuer exactly as it appears in the token's `iss` claim. */
   issuerUrl: string;
@@ -25,6 +27,7 @@ export interface Config {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
+    version: env.SAMU_VERSION || "dev",
     port: integer(env, "PORT", 8080),
     issuerUrl: httpsUrl(env, "ISSUER_URL"),
     jwksUrl: env.JWKS_URL ? httpsUrl(env, "JWKS_URL") : undefined,

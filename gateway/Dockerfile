@@ -9,6 +9,8 @@ RUN pnpm build && pnpm prune --prod
 
 FROM node:24.21.0-alpine3.24
 WORKDIR /app
+ARG VERSION=dev
+ENV SAMU_VERSION=$VERSION
 ENV NODE_ENV=production LOG_DIR=/app/logs
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules

@@ -113,6 +113,7 @@ class MainActivity : ComponentActivity() {
             val signedIn by app.auth.signedIn.collectAsState()
             AssistantTheme {
                 SetupScreen(
+                    version = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty(),
                     roleHeld = roleHeld,
                     signedIn = signedIn,
                     micAllowed = micAllowed,
@@ -200,6 +201,7 @@ private enum class Step { Role, SignIn, Mic, Location, Contacts, Sms, Calls, Loc
 
 @Composable
 private fun SetupScreen(
+    version: String,
     roleHeld: Boolean,
     signedIn: Boolean,
     micAllowed: Boolean,
@@ -266,6 +268,7 @@ private fun SetupScreen(
                     // The byline wherever the app describes itself; the app's name alone is "Samu".
                     MonoLabel("samu by mahasamuha")
                     Text("Setup", style = AppType.h3, color = colors.text)
+                    Text("v$version", style = AppType.eyebrow, color = colors.textMuted)
                 }
                 Mark(size = 40.dp)
             }

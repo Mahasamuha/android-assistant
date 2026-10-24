@@ -28,14 +28,15 @@ Secrets stay in the env files. The Bifrost config refers to them as `env.ANTHROP
    ```
 2. In `local/bifrost-config.json`, set the virtual key name and the monthly budget (`max_limit`, in dollars).
 3. Set a spend limit on the Anthropic Console workspace too, as a backstop.
-4. Start the stack. The gateway and MCP images come from Docker Hub (`mahasamuha/samu-gateway`, `mahasamuha/samu-mcp`), published by `.github/workflows/images.yml` on every push to `main` that touches them; only the `deploy/` directory is needed on the server:
+4. Start the stack. The gateway and MCP images come from Docker Hub (`mahasamuha/samu-gateway`, `mahasamuha/samu-mcp`), published by `.github/workflows/images.yml` on every push to `main`; only the `deploy/` directory is needed on the server:
    ```sh
    docker compose pull && docker compose up -d
    ```
-   Set `IMAGE_TAG` in `.env` to a `sha-<commit>` tag to pin a version or roll back. To build from a checkout instead (development):
+   Set `IMAGE_TAG` in `.env` to a version such as `0.3.1` (or a `sha-<commit>` tag) to pin or roll back. To build from a checkout instead (development):
    ```sh
    docker compose -f compose.yaml -f compose.build.yaml up -d --build
    ```
+   Every push to `main` gets a semantic version (tag `vX.Y.Z`, computed by `.github/scripts/next-version.sh` from conventional-commit subjects), and both images are published as `X.Y.Z`, `X.Y`, `latest` and `sha-<commit>`. `curl <gateway>/healthz` shows which version is running.
 5. Point the reverse proxy at `GATEWAY_BIND` (see below).
 
 The Bifrost config keeps these settings on purpose:

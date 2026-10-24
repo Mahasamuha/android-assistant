@@ -15,7 +15,7 @@ function log(event: string, fields: Record<string, unknown> = {}): void {
 
 /** The tools this server offers (plan §4b). Built per request: the server keeps no state between requests. */
 function buildServer(): McpServer {
-  const server = new McpServer({ name: "assistant-tools", version: "0.1.0" });
+  const server = new McpServer({ name: "assistant-tools", version: config.version });
 
   server.registerTool(
     "web_search",
@@ -93,7 +93,7 @@ function buildServer(): McpServer {
 // through the auth gateway, which checks the phone's token; this server is on the private network.
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const { pathname } = new URL(req.url ?? "/", "http://mcp");
-  if (req.method === "GET" && pathname === "/healthz") return send(res, 200, { status: "ok" });
+  if (req.method === "GET" && pathname === "/healthz") return send(res, 200, { status: "ok", version: config.version });
   if (req.method !== "POST" || pathname !== "/mcp") return send(res, 404, { error: "Not found" });
 
   let body: unknown;
@@ -137,7 +137,7 @@ const httpServer = createServer((req, res) => {
     else res.destroy();
   });
 });
-httpServer.listen(config.port, () => log("listening", { port: config.port }));
+httpServer.listen(config.port, () => log("listening", { version: config.version, port: config.port }));
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
